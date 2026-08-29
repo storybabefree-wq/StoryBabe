@@ -2,13 +2,13 @@
 const nextConfig = {
   reactStrictMode: true,
   transpilePackages: ['@storybabe/types'],
-  async rewrites() {
-    return [
+  images: {
+    remotePatterns: [
       {
-        source: '/api/v1/:path*',
-        destination: 'http://localhost:4000/api/v1/:path*'
+        protocol: 'https',
+        hostname: '**'
       }
-    ];
+    ]
   }
 };
 
