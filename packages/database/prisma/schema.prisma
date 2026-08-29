@@ -1,0 +1,290 @@
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id                    String            @id @default(uuid())
+  email                 String            @unique
+  username              String            @unique
+  displayName           String
+  passwordHash          String
+  bio                   String?
+  avatarUrl             String?
+  role                  String            @default("AUTHOR") // READER, AUTHOR, MODERATOR, ADMIN
+  lastUsernameChangeAt  DateTime?
+  usernameChangesCount  Int               @default(0)
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
+
+  usernameHistory       UsernameHistory[]
+  stories               Story[]
+  comments              Comment[]
+  commentLikes          CommentLike[]
+  storyLikes            StoryLike[]
+  episodeLikes          EpisodeLike[]
+  storyViews            StoryView[]
+  episodeViews          EpisodeView[]
+  bookmarks             Bookmark[]
+  reportsFiled          Report[]          @relation("ReporterRelation")
+  reportsResolved       Report[]          @relation("ResolverRelation")
+  moderationActions     ModerationAction[]
+
+  followers             Follow[]          @relation("FollowingRelation")
+  following             Follow[]          @relation("FollowerRelation")
+
+  @@index([username])
+  @@index([email])
+}
+
+model UsernameHistory {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  oldUsername String
+  newUsername String
+  changedAt   DateTime @default(now())
+
+  @@index([userId])
+}
+
+model Story {
+  id               String            @id @default(uuid())
+  authorId         String
+  author           User              @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  title            String
+  summary          String
+  content          String?           // For SINGLE story
+  type             String            // SINGLE, SERIES
+  status           String            @default("ONGOING") // ONGOING, COMPLETED, ON_HOLD
+  onHoldReason     String?
+  isInactive       Boolean           @default(false)
+  inactiveTaggedAt DateTime?
+  allowComments    Boolean           @default(true)
+  viewsCount       Int               @default(0)
+  likesCount       Int               @default(0)
+  isUnpublished    Boolean           @default(false)
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  publishedAt      DateTime?         @default(now())
+
+  episodes         Episode[]
+  safetyFlags      StorySafetyFlag[]
+  tags             StoryTag[]
+  comments         Comment[]
+  likes            StoryLike[]
+  views            StoryView[]
+  bookmarks        Bookmark[]
+  reports          Report[]
+
+  @@index([authorId])
+  @@index([status])
+  @@index([type])
+  @@index([isInactive])
+}
+
+model Episode {
+  id           String        @id @default(uuid())
+  storyId      String
+  story        Story         @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  seasonNumber Int           @default(1)
+  episodeNumber Int
+  title        String
+  content      String
+  status       String        @default("COMPLETED") // DRAFT, ONGOING, COMPLETED, ON_HOLD
+  onHoldReason String?
+  viewsCount   Int           @default(0)
+  likesCount   Int           @default(0)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  comments     Comment[]
+  likes        EpisodeLike[]
+  views        EpisodeView[]
+  reports      Report[]
+
+  @@unique([storyId, seasonNumber, episodeNumber])
+  @@index([storyId])
+}
+
+model StorySafetyFlag {
+  id      String @id @default(uuid())
+  storyId String
+  story   Story  @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  flag    String // SELF_HARM, ABUSE, DEATH_LOSS, SUBSTANCE_USE, MENTAL_HEALTH_CRISIS
+
+  @@unique([storyId, flag])
+  @@index([storyId])
+  @@index([flag])
+}
+
+model Tag {
+  id      String     @id @default(uuid())
+  name    String     @unique
+  stories StoryTag[]
+
+  @@index([name])
+}
+
+model StoryTag {
+  id      String @id @default(uuid())
+  storyId String
+  story   Story  @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  tagId   String
+  tag     Tag    @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@unique([storyId, tagId])
+  @@index([storyId])
+  @@index([tagId])
+}
+
+model StoryLike {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  storyId   String
+  story     Story    @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, storyId])
+  @@index([storyId])
+}
+
+model EpisodeLike {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  episodeId String
+  episode   Episode  @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, episodeId])
+  @@index([episodeId])
+}
+
+model StoryView {
+  id        String   @id @default(uuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  storyId   String
+  story     Story    @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  ipAddress String?
+  createdAt DateTime @default(now())
+
+  @@index([storyId])
+}
+
+model EpisodeView {
+  id        String   @id @default(uuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  episodeId String
+  episode   Episode  @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+  ipAddress String?
+  createdAt DateTime @default(now())
+
+  @@index([episodeId])
+}
+
+model Comment {
+  id        String        @id @default(uuid())
+  storyId   String
+  story     Story         @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  episodeId String?
+  episode   Episode?      @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  content   String
+  parentId  String?
+  parent    Comment?      @relation("CommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies   Comment[]     @relation("CommentReplies")
+  likes     CommentLike[]
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  @@index([storyId])
+  @@index([episodeId])
+  @@index([userId])
+}
+
+model CommentLike {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  commentId String
+  comment   Comment  @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, commentId])
+}
+
+model Follow {
+  id          String   @id @default(uuid())
+  followerId  String
+  follower    User     @relation("FollowerRelation", fields: [followerId], references: [id], onDelete: Cascade)
+  followingId String
+  following   User     @relation("FollowingRelation", fields: [followingId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+
+  @@unique([followerId, followingId])
+  @@index([followerId])
+  @@index([followingId])
+}
+
+model Bookmark {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  storyId   String
+  story     Story    @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, storyId])
+  @@index([userId])
+}
+
+model Report {
+  id             String             @id @default(uuid())
+  reporterId     String
+  reporter       User               @relation("ReporterRelation", fields: [reporterId], references: [id], onDelete: Cascade)
+  storyId        String
+  story          Story              @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  episodeId      String?
+  episode        Episode?           @relation(fields: [episodeId], references: [id], onDelete: SetNull)
+  category       String             // NO_CONSENT, HARASSMENT, SPAM, COPYRIGHT, OTHER
+  priority       String             @default("NORMAL") // HIGH (NO_CONSENT), NORMAL
+  status         String             @default("PENDING") // PENDING, IN_REVIEW, RESOLVED, DISMISSED
+  reason         String
+  moderatorNotes String?
+  resolvedById   String?
+  resolvedBy     User?              @relation("ResolverRelation", fields: [resolvedById], references: [id], onDelete: SetNull)
+  resolvedAt     DateTime?
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  actions        ModerationAction[]
+
+  @@index([category])
+  @@index([priority])
+  @@index([status])
+}
+
+model ModerationAction {
+  id          String   @id @default(uuid())
+  reportId    String?
+  report      Report?  @relation(fields: [reportId], references: [id], onDelete: SetNull)
+  moderatorId String
+  moderator   User     @relation(fields: [moderatorId], references: [id], onDelete: Cascade)
+  actionType  String   // WARNING, UNPUBLISH, RESTRICT_USER, DISMISS
+  targetType  String   // STORY, EPISODE, USER, COMMENT
+  targetId    String
+  notes       String
+  createdAt   DateTime @default(now())
+
+  @@index([moderatorId])
+  @@index([targetId])
+}

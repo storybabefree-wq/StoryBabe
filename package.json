@@ -1,0 +1,22 @@
+{
+  "name": "storybabe-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "StoryBabe - Real human experiences as text stories platform",
+  "workspaces": [
+    "packages/*",
+    "services/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -n \"gateway,auth,story,social,mod,worker,web\" -c \"blue,cyan,magenta,yellow,red,green,white\" \"npm run dev -w @storybabe/gateway\" \"npm run dev -w @storybabe/auth-service\" \"npm run dev -w @storybabe/story-service\" \"npm run dev -w @storybabe/social-service\" \"npm run dev -w @storybabe/moderation-service\" \"npm run dev -w @storybabe/worker-service\" \"npm run dev -w @storybabe/web\"",
+    "db:generate": "npm run db:generate -w @storybabe/database",
+    "db:push": "npm run db:push -w @storybabe/database",
+    "db:seed": "npm run db:seed -w @storybabe/database",
+    "build": "npm run build --workspaces --if-present"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2",
+    "typescript": "^5.7.3"
+  }
+}
