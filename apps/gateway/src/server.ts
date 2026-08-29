@@ -13,7 +13,7 @@ import {
 dotenv.config();
 
 const app = express();
-const PORT = process.env.GATEWAY_PORT || 4000;
+const PORT = process.env.GATEWAY_PORT || process.env.PORT || 4000;
 
 app.use(helmet());
 app.use(
@@ -64,6 +64,15 @@ const STORY_SERVICE_URL = process.env.STORY_SERVICE_URL || 'http://127.0.0.1:400
 const SOCIAL_SERVICE_URL = process.env.SOCIAL_SERVICE_URL || 'http://127.0.0.1:4003';
 const MODERATION_SERVICE_URL = process.env.MODERATION_SERVICE_URL || 'http://127.0.0.1:4004';
 const WORKER_SERVICE_URL = process.env.WORKER_SERVICE_URL || 'http://127.0.0.1:4005';
+
+// Root health checks for cloud deployment platforms (Render, Railway)
+app.get('/', (req: Request, res: Response) => {
+  res.json({ status: 'ok', service: 'storybabe-gateway', timestamp: new Date().toISOString() });
+});
+
+app.head('/', (req: Request, res: Response) => {
+  res.status(200).end();
+});
 
 app.get('/health', async (req: Request, res: Response) => {
   const services = [

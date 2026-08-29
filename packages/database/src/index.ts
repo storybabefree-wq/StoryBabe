@@ -25,57 +25,220 @@ const dbPath = path.join(dbDir, 'storybabe.db');
 
 export const db = new DatabaseSync(dbPath);
 
-// Initialize schema tables
-db.exec(`
-  CREATE TABLE IF NOT EXISTS users (
-    id TEXT PRIMARY KEY,
-    email TEXT UNIQUE NOT NULL,
-    username TEXT UNIQUE NOT NULL,
-    displayName TEXT NOT NULL,
-    passwordHash TEXT NOT NULL,
-    bio TEXT,
-    avatarUrl TEXT,
-    role TEXT DEFAULT 'AUTHOR',
-    lastUsernameChangeAt TEXT,
-    usernameChangesCount INTEGER DEFAULT 0,
-    createdAt TEXT NOT NULL,
-    updatedAt TEXT NOT NULL
-  );
+// Enable WAL mode, busy timeout and safe concurrency for SQLite
+try {
+  db.exec('PRAGMA journal_mode = WAL;');
+  db.exec('PRAGMA busy_timeout = 10000;');
+  db.exec('PRAGMA synchronous = NORMAL;');
+} catch (e) {
+  // Ignored
+}
 
-  CREATE TABLE IF NOT EXISTS username_history (
-    id TEXT PRIMARY KEY,
-    userId TEXT NOT NULL,
-    oldUsername TEXT NOT NULL,
-    newUsername TEXT NOT NULL,
-    changedAt TEXT NOT NULL,
-    FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE
-  );
+// Initialize schema tables safely
+try {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS users (
+      id TEXT PRIMARY KEY,
+      email TEXT UNIQUE NOT NULL,
+      username TEXT UNIQUE NOT NULL,
+      displayName TEXT NOT NULL,
+      passwordHash TEXT NOT NULL,
+      bio TEXT,
+      avatarUrl TEXT,
+      role TEXT DEFAULT 'AUTHOR',
+      lastUsernameChangeAt TEXT,
+      usernameChangesCount INTEGER DEFAULT 0,
+      createdAt TEXT NOT NULL,
+      updatedAt TEXT NOT NULL
+    );
 
-  CREATE TABLE IF NOT EXISTS stories (
-    id TEXT PRIMARY KEY,
-    authorId TEXT NOT NULL,
-    title TEXT NOT NULL,
-    summary TEXT NOT NULL,
-    oneliner TEXT,
-    posterUrl TEXT,
-    posterStyle TEXT DEFAULT 'bottom-gradient',
-    posterType TEXT DEFAULT 'PRESET',
-    content TEXT,
-    type TEXT NOT NULL,
-    status TEXT DEFAULT 'ONGOING',
-    onHoldReason TEXT,
-    isInactive INTEGER DEFAULT 0,
-    inactiveTaggedAt TEXT,
-    allowComments INTEGER DEFAULT 1,
-    viewsCount INTEGER DEFAULT 0,
-    likesCount INTEGER DEFAULT 0,
-    isUnpublished INTEGER DEFAULT 0,
-    createdAt TEXT NOT NULL,
-    updatedAt TEXT NOT NULL,
-    publishedAt TEXT,
-    FOREIGN KEY (authorId) REFERENCES users(id) ON DELETE CASCADE
-  );
-`);
+    CREATE TABLE IF NOT EXISTS username_history (
+      id TEXT PRIMARY KEY,
+      userId TEXT NOT NULL,
+      oldUsername TEXT NOT NULL,
+      newUsername TEXT NOT NULL,
+      changedAt TEXT NOT NULL,
+      FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS stories (
+      id TEXT PRIMARY KEY,
+      authorId TEXT NOT NULL,
+      title TEXT NOT NULL,
+      summary TEXT NOT NULL,
+      oneliner TEXT,
+      posterUrl TEXT,
+      posterStyle TEXT DEFAULT 'bottom-gradient',
+      posterType TEXT DEFAULT 'PRESET',
+      content TEXT,
+      type TEXT NOT NULL,
+      status TEXT DEFAULT 'ONGOING',
+      onHoldReason TEXT,
+      isInactive INTEGER DEFAULT 0,
+      inactiveTaggedAt TEXT,
+      allowComments INTEGER DEFAULT 1,
+      viewsCount INTEGER DEFAULT 0,
+      likesCount INTEGER DEFAULT 0,
+      isUnpublished INTEGER DEFAULT 0,
+      createdAt TEXT NOT NULL,
+      updatedAt TEXT NOT NULL,
+      publishedAt TEXT,
+      FOREIGN KEY (authorId) REFERENCES users(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS episodes (
+      id TEXT PRIMARY KEY,
+      storyId TEXT NOT NULL,
+      seasonNumber INTEGER DEFAULT 1,
+      episodeNumber INTEGER NOT NULL,
+      title TEXT NOT NULL,
+      content TEXT NOT NULL,
+      status TEXT DEFAULT 'COMPLETED',
+      onHoldReason TEXT,
+      viewsCount INTEGER DEFAULT 0,
+      likesCount INTEGER DEFAULT 0,
+      createdAt TEXT NOT NULL,
+      updatedAt TEXT NOT NULL,
+      FOREIGN KEY (storyId) REFERENCES stories(id) ON DELETE CASCADE,
+      UNIQUE(storyId, seasonNumber, episodeNumber)
+    );
+
+    CREATE TABLE IF NOT EXISTS story_safety_flags (
+      id TEXT PRIMARY KEY,
+      storyId TEXT NOT NULL,
+      flag TEXT NOT NULL,
+      FOREIGN KEY (storyId) REFERENCES stories(id) ON DELETE CASCADE,
+      UNIQUE(storyId, flag)
+    );
+
+    CREATE TABLE IF NOT EXISTS tags (
+      id TEXT PRIMARY KEY,
+      name TEXT UNIQUE NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS story_tags (
+      id TEXT PRIMARY KEY,
+      storyId TEXT NOT NULL,
+      tagId TEXT NOT NULL,
+      FOREIGN KEY (storyId) REFERENCES stories(id) ON DELETE CASCADE,
+      FOREIGN KEY (tagId) REFERENCES tags(id) ON DELETE CASCADE,
+      UNIQUE(storyId, tagId)
+    );
+
+    CREATE TABLE IF NOT EXISTS story_likes (
+      id TEXT PRIMARY KEY,
+      userId TEXT NOT NULL,
+      storyId TEXT NOT NULL,
+      createdAt TEXT NOT NULL,
+      FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (storyId) REFERENCES stories(id) ON DELETE CASCADE,
+      UNIQUE(userId, storyId)
+    );
+
+    CREATE TABLE IF NOT EXISTS episode_likes (
+      id TEXT PRIMARY KEY,
+      userId TEXT NOT NULL,
+      episodeId TEXT NOT NULL,
+      createdAt TEXT NOT NULL,
+      FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (episodeId) REFERENCES episodes(id) ON DELETE CASCADE,
+      UNIQUE(userId, episodeId)
+    );
+
+    CREATE TABLE IF NOT EXISTS story_views (
+      id TEXT PRIMARY KEY,
+      userId TEXT,
+      storyId TEXT NOT NULL,
+      ipAddress TEXT,
+      createdAt TEXT NOT NULL,
+      FOREIGN KEY (storyId) REFERENCES stories(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS episode_views (
+      id TEXT PRIMARY KEY,
+      userId TEXT,
+      episodeId TEXT NOT NULL,
+      ipAddress TEXT,
+      createdAt TEXT NOT NULL,
+      FOREIGN KEY (episodeId) REFERENCES episodes(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS comments (
+      id TEXT PRIMARY KEY,
+      storyId TEXT NOT NULL,
+      episodeId TEXT,
+      userId TEXT NOT NULL,
+      parentId TEXT,
+      content TEXT NOT NULL,
+      createdAt TEXT NOT NULL,
+      updatedAt TEXT NOT NULL,
+      FOREIGN KEY (storyId) REFERENCES stories(id) ON DELETE CASCADE,
+      FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS comment_likes (
+      id TEXT PRIMARY KEY,
+      userId TEXT NOT NULL,
+      commentId TEXT NOT NULL,
+      createdAt TEXT NOT NULL,
+      FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (commentId) REFERENCES comments(id) ON DELETE CASCADE,
+      UNIQUE(userId, commentId)
+    );
+
+    CREATE TABLE IF NOT EXISTS follows (
+      id TEXT PRIMARY KEY,
+      followerId TEXT NOT NULL,
+      followingId TEXT NOT NULL,
+      createdAt TEXT NOT NULL,
+      FOREIGN KEY (followerId) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (followingId) REFERENCES users(id) ON DELETE CASCADE,
+      UNIQUE(followerId, followingId)
+    );
+
+    CREATE TABLE IF NOT EXISTS bookmarks (
+      id TEXT PRIMARY KEY,
+      userId TEXT NOT NULL,
+      storyId TEXT NOT NULL,
+      createdAt TEXT NOT NULL,
+      FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (storyId) REFERENCES stories(id) ON DELETE CASCADE,
+      UNIQUE(userId, storyId)
+    );
+
+    CREATE TABLE IF NOT EXISTS reports (
+      id TEXT PRIMARY KEY,
+      reporterId TEXT NOT NULL,
+      storyId TEXT NOT NULL,
+      episodeId TEXT,
+      category TEXT NOT NULL,
+      priority TEXT DEFAULT 'NORMAL',
+      status TEXT DEFAULT 'PENDING',
+      reason TEXT NOT NULL,
+      moderatorNotes TEXT,
+      resolvedById TEXT,
+      resolvedAt TEXT,
+      createdAt TEXT NOT NULL,
+      updatedAt TEXT NOT NULL,
+      FOREIGN KEY (reporterId) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (storyId) REFERENCES stories(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS moderation_actions (
+      id TEXT PRIMARY KEY,
+      reportId TEXT,
+      moderatorId TEXT NOT NULL,
+      actionType TEXT NOT NULL,
+      targetType TEXT NOT NULL,
+      targetId TEXT NOT NULL,
+      notes TEXT NOT NULL,
+      createdAt TEXT NOT NULL,
+      FOREIGN KEY (moderatorId) REFERENCES users(id) ON DELETE CASCADE
+    );
+  `);
+} catch (e) {
+  // Schema already created by another worker
+}
 
 // Safe migrations for existing SQLite database using PRAGMA table_info
 try {
@@ -94,215 +257,11 @@ try {
     db.exec("ALTER TABLE stories ADD COLUMN posterType TEXT DEFAULT 'PRESET'");
   }
 } catch (e) {
-  console.error('Migration error:', e);
+  // Migration already handled
 }
 
-// Update existing seeded stories with rich visual posters & oneliners if null
+// Safe Seed Initialization (Idempotent with INSERT OR IGNORE)
 try {
-  db.prepare(`
-    UPDATE stories SET
-      oneliner = CASE
-        WHEN id = 'story-1' THEN 'Some memories are too heavy to fold away.'
-        WHEN id = 'story-2' THEN 'At 4:00 AM in corporate finance, they called the trembling in my fingers hunger.'
-        WHEN id = 'story-3' THEN 'I realized I had become a background prop in a life we were supposed to build.'
-        WHEN id = 'story-4' THEN 'Leaving pediatric care felt like taking off a coat of armor.'
-        ELSE COALESCE(oneliner, title)
-      END,
-      posterUrl = CASE
-        WHEN id = 'story-1' THEN 'https://images.unsplash.com/photo-1515694346937-94d85e41e6f0?auto=format&fit=crop&w=1000&q=80'
-        WHEN id = 'story-2' THEN 'https://images.unsplash.com/photo-1514565131-fce0801e5785?auto=format&fit=crop&w=1000&q=80'
-        WHEN id = 'story-3' THEN 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=1000&q=80'
-        WHEN id = 'story-4' THEN 'https://images.unsplash.com/photo-1495616811223-4d98c6e9c869?auto=format&fit=crop&w=1000&q=80'
-        ELSE COALESCE(posterUrl, 'https://images.unsplash.com/photo-1534447677768-be436bb09401?auto=format&fit=crop&w=1000&q=80')
-      END,
-      posterStyle = COALESCE(posterStyle, 'bottom-gradient'),
-      posterType = COALESCE(posterType, 'PRESET')
-    WHERE posterUrl IS NULL OR oneliner IS NULL;
-  `).run();
-} catch (e) {
-  console.error('Update seed posters error:', e);
-}
-
-db.exec(`
-
-  CREATE TABLE IF NOT EXISTS episodes (
-    id TEXT PRIMARY KEY,
-    storyId TEXT NOT NULL,
-    seasonNumber INTEGER DEFAULT 1,
-    episodeNumber INTEGER NOT NULL,
-    title TEXT NOT NULL,
-    content TEXT NOT NULL,
-    status TEXT DEFAULT 'COMPLETED',
-    onHoldReason TEXT,
-    viewsCount INTEGER DEFAULT 0,
-    likesCount INTEGER DEFAULT 0,
-    createdAt TEXT NOT NULL,
-    updatedAt TEXT NOT NULL,
-    FOREIGN KEY (storyId) REFERENCES stories(id) ON DELETE CASCADE,
-    UNIQUE(storyId, seasonNumber, episodeNumber)
-  );
-
-  CREATE TABLE IF NOT EXISTS story_safety_flags (
-    id TEXT PRIMARY KEY,
-    storyId TEXT NOT NULL,
-    flag TEXT NOT NULL,
-    FOREIGN KEY (storyId) REFERENCES stories(id) ON DELETE CASCADE,
-    UNIQUE(storyId, flag)
-  );
-
-  CREATE TABLE IF NOT EXISTS tags (
-    id TEXT PRIMARY KEY,
-    name TEXT UNIQUE NOT NULL
-  );
-
-  CREATE TABLE IF NOT EXISTS story_tags (
-    id TEXT PRIMARY KEY,
-    storyId TEXT NOT NULL,
-    tagId TEXT NOT NULL,
-    FOREIGN KEY (storyId) REFERENCES stories(id) ON DELETE CASCADE,
-    FOREIGN KEY (tagId) REFERENCES tags(id) ON DELETE CASCADE,
-    UNIQUE(storyId, tagId)
-  );
-
-  CREATE TABLE IF NOT EXISTS story_likes (
-    id TEXT PRIMARY KEY,
-    userId TEXT NOT NULL,
-    storyId TEXT NOT NULL,
-    createdAt TEXT NOT NULL,
-    FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE,
-    FOREIGN KEY (storyId) REFERENCES stories(id) ON DELETE CASCADE,
-    UNIQUE(userId, storyId)
-  );
-
-  CREATE TABLE IF NOT EXISTS episode_likes (
-    id TEXT PRIMARY KEY,
-    userId TEXT NOT NULL,
-    episodeId TEXT NOT NULL,
-    createdAt TEXT NOT NULL,
-    FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE,
-    FOREIGN KEY (episodeId) REFERENCES episodes(id) ON DELETE CASCADE,
-    UNIQUE(userId, episodeId)
-  );
-
-  CREATE TABLE IF NOT EXISTS story_views (
-    id TEXT PRIMARY KEY,
-    userId TEXT,
-    storyId TEXT NOT NULL,
-    ipAddress TEXT,
-    createdAt TEXT NOT NULL,
-    FOREIGN KEY (storyId) REFERENCES stories(id) ON DELETE CASCADE
-  );
-
-  CREATE TABLE IF NOT EXISTS episode_views (
-    id TEXT PRIMARY KEY,
-    userId TEXT,
-    episodeId TEXT NOT NULL,
-    ipAddress TEXT,
-    createdAt TEXT NOT NULL,
-    FOREIGN KEY (episodeId) REFERENCES episodes(id) ON DELETE CASCADE
-  );
-
-  CREATE TABLE IF NOT EXISTS comments (
-    id TEXT PRIMARY KEY,
-    storyId TEXT NOT NULL,
-    episodeId TEXT,
-    userId TEXT NOT NULL,
-    parentId TEXT,
-    content TEXT NOT NULL,
-    createdAt TEXT NOT NULL,
-    updatedAt TEXT NOT NULL,
-    FOREIGN KEY (storyId) REFERENCES stories(id) ON DELETE CASCADE,
-    FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE
-  );
-
-  CREATE TABLE IF NOT EXISTS comment_likes (
-    id TEXT PRIMARY KEY,
-    userId TEXT NOT NULL,
-    commentId TEXT NOT NULL,
-    createdAt TEXT NOT NULL,
-    FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE,
-    FOREIGN KEY (commentId) REFERENCES comments(id) ON DELETE CASCADE,
-    UNIQUE(userId, commentId)
-  );
-
-  CREATE TABLE IF NOT EXISTS follows (
-    id TEXT PRIMARY KEY,
-    followerId TEXT NOT NULL,
-    followingId TEXT NOT NULL,
-    createdAt TEXT NOT NULL,
-    FOREIGN KEY (followerId) REFERENCES users(id) ON DELETE CASCADE,
-    FOREIGN KEY (followingId) REFERENCES users(id) ON DELETE CASCADE,
-    UNIQUE(followerId, followingId)
-  );
-
-  CREATE TABLE IF NOT EXISTS bookmarks (
-    id TEXT PRIMARY KEY,
-    userId TEXT NOT NULL,
-    storyId TEXT NOT NULL,
-    createdAt TEXT NOT NULL,
-    FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE,
-    FOREIGN KEY (storyId) REFERENCES stories(id) ON DELETE CASCADE,
-    UNIQUE(userId, storyId)
-  );
-
-  CREATE TABLE IF NOT EXISTS reports (
-    id TEXT PRIMARY KEY,
-    reporterId TEXT NOT NULL,
-    storyId TEXT NOT NULL,
-    episodeId TEXT,
-    category TEXT NOT NULL,
-    priority TEXT DEFAULT 'NORMAL',
-    status TEXT DEFAULT 'PENDING',
-    reason TEXT NOT NULL,
-    moderatorNotes TEXT,
-    resolvedById TEXT,
-    resolvedAt TEXT,
-    createdAt TEXT NOT NULL,
-    updatedAt TEXT NOT NULL,
-    FOREIGN KEY (reporterId) REFERENCES users(id) ON DELETE CASCADE,
-    FOREIGN KEY (storyId) REFERENCES stories(id) ON DELETE CASCADE
-  );
-
-  CREATE TABLE IF NOT EXISTS moderation_actions (
-    id TEXT PRIMARY KEY,
-    reportId TEXT,
-    moderatorId TEXT NOT NULL,
-    actionType TEXT NOT NULL,
-    targetType TEXT NOT NULL,
-    targetId TEXT NOT NULL,
-    notes TEXT NOT NULL,
-    createdAt TEXT NOT NULL,
-    FOREIGN KEY (moderatorId) REFERENCES users(id) ON DELETE CASCADE
-  );
-`);
-
-// Auto-seed if users table is empty or ensure admin exists
-const modExists = db.prepare("SELECT id FROM users WHERE username = 'storybabe_mod'").get();
-if (!modExists) {
-  const hash = bcrypt.hashSync('password123', 10);
-  const nowIso = new Date().toISOString();
-  db.prepare(`
-    INSERT OR REPLACE INTO users (id, email, username, displayName, passwordHash, bio, role, lastUsernameChangeAt, usernameChangesCount, createdAt, updatedAt)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    'user-mod-admin-4',
-    'mod@storybabe.internal',
-    'storybabe_mod',
-    'StoryBabe Safety Desk',
-    hash,
-    'Community safety and prioritized report review desk.',
-    'ADMIN',
-    null,
-    0,
-    nowIso,
-    nowIso
-  );
-}
-
-const userCountStmt = db.prepare('SELECT COUNT(*) as count FROM users');
-const { count: initialUserCount } = userCountStmt.get() as any;
-
-if (initialUserCount <= 1) {
   const hash = bcrypt.hashSync('password123', 10);
   const now = new Date();
   const thirtyFiveDaysAgo = new Date(now.getTime() - 35 * 24 * 60 * 60 * 1000).toISOString();
@@ -367,7 +326,7 @@ if (initialUserCount <= 1) {
   };
 
   const insertUser = db.prepare(`
-    INSERT INTO users (id, email, username, displayName, passwordHash, bio, role, lastUsernameChangeAt, usernameChangesCount, createdAt, updatedAt)
+    INSERT OR IGNORE INTO users (id, email, username, displayName, passwordHash, bio, role, lastUsernameChangeAt, usernameChangesCount, createdAt, updatedAt)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
@@ -377,13 +336,13 @@ if (initialUserCount <= 1) {
   insertUser.run(uMod.id, uMod.email, uMod.username, uMod.displayName, uMod.passwordHash, uMod.bio, uMod.role, uMod.lastUsernameChangeAt, uMod.usernameChangesCount, uMod.createdAt, uMod.updatedAt);
 
   // Follows
-  const insertFollow = db.prepare('INSERT INTO follows (id, followerId, followingId, createdAt) VALUES (?, ?, ?, ?)');
+  const insertFollow = db.prepare('INSERT OR IGNORE INTO follows (id, followerId, followingId, createdAt) VALUES (?, ?, ?, ?)');
   insertFollow.run('f-1', uSarah.id, uElena.id, nowIso);
   insertFollow.run('f-2', uMarcus.id, uElena.id, nowIso);
   insertFollow.run('f-3', uElena.id, uMarcus.id, nowIso);
 
   // Tags
-  const insertTag = db.prepare('INSERT INTO tags (id, name) VALUES (?, ?)');
+  const insertTag = db.prepare('INSERT OR IGNORE INTO tags (id, name) VALUES (?, ?)');
   insertTag.run('tag-1', 'grief');
   insertTag.run('tag-2', 'family');
   insertTag.run('tag-3', 'recovery');
@@ -394,11 +353,10 @@ if (initialUserCount <= 1) {
 
   // Stories
   const insertStory = db.prepare(`
-    INSERT INTO stories (id, authorId, title, summary, content, type, status, onHoldReason, isInactive, inactiveTaggedAt, allowComments, viewsCount, likesCount, createdAt, updatedAt, publishedAt)
+    INSERT OR IGNORE INTO stories (id, authorId, title, summary, content, type, status, onHoldReason, isInactive, inactiveTaggedAt, allowComments, viewsCount, likesCount, createdAt, updatedAt, publishedAt)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
-  // Story 1: Single, Completed, Grief/Death Loss
   const s1Date = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000).toISOString();
   insertStory.run(
     'story-1',
@@ -427,15 +385,13 @@ Grief doesn't come in waves like people say. It sits quietly like an old winter 
     s1Date
   );
 
-  // Safety Flags & Story Tags for Story 1
-  const insertFlag = db.prepare('INSERT INTO story_safety_flags (id, storyId, flag) VALUES (?, ?, ?)');
+  const insertFlag = db.prepare('INSERT OR IGNORE INTO story_safety_flags (id, storyId, flag) VALUES (?, ?, ?)');
   insertFlag.run('sf-1', 'story-1', 'DEATH_LOSS');
 
-  const insertStoryTag = db.prepare('INSERT INTO story_tags (id, storyId, tagId) VALUES (?, ?, ?)');
+  const insertStoryTag = db.prepare('INSERT OR IGNORE INTO story_tags (id, storyId, tagId) VALUES (?, ?, ?)');
   insertStoryTag.run('st-1', 'story-1', 'tag-1');
   insertStoryTag.run('st-2', 'story-1', 'tag-2');
 
-  // Story 2: Series, Ongoing, Substance Use & Mental Health
   const s2Date = new Date(now.getTime() - 25 * 24 * 60 * 60 * 1000).toISOString();
   insertStory.run(
     'story-2',
@@ -462,9 +418,8 @@ Grief doesn't come in waves like people say. It sits quietly like an old winter 
   insertStoryTag.run('st-4', 'story-2', 'tag-4');
   insertStoryTag.run('st-5', 'story-2', 'tag-5');
 
-  // Episodes for Story 2
   const insertEp = db.prepare(`
-    INSERT INTO episodes (id, storyId, seasonNumber, episodeNumber, title, content, status, viewsCount, likesCount, createdAt, updatedAt)
+    INSERT OR IGNORE INTO episodes (id, storyId, seasonNumber, episodeNumber, title, content, status, viewsCount, likesCount, createdAt, updatedAt)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
@@ -505,7 +460,6 @@ When the nurse placed it inside a clear plastic evidence bag and locked it insid
     s2Ep2Date
   );
 
-  // Story 3: Series, On Hold with Reason
   const s3Date = new Date(now.getTime() - 40 * 24 * 60 * 60 * 1000).toISOString();
   insertStory.run(
     'story-3',
@@ -547,7 +501,6 @@ I never told you why I left so abruptly in June. It wasn't about the rent increa
     s3Date
   );
 
-  // Story 4: Series, Inactive (75 days old)
   const s4Date = new Date(now.getTime() - 75 * 24 * 60 * 60 * 1000).toISOString();
   insertStory.run(
     'story-4',
@@ -586,9 +539,8 @@ That first week, my entire vocabulary consisted of four polite phrases. When you
     s4Date
   );
 
-  // Comments
   const insertComment = db.prepare(`
-    INSERT INTO comments (id, storyId, episodeId, userId, parentId, content, createdAt, updatedAt)
+    INSERT OR IGNORE INTO comments (id, storyId, episodeId, userId, parentId, content, createdAt, updatedAt)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
@@ -614,15 +566,13 @@ That first week, my entire vocabulary consisted of four polite phrases. When you
     s1Date
   );
 
-  // Likes & Views
-  const insertStoryLike = db.prepare('INSERT INTO story_likes (id, userId, storyId, createdAt) VALUES (?, ?, ?, ?)');
+  const insertStoryLike = db.prepare('INSERT OR IGNORE INTO story_likes (id, userId, storyId, createdAt) VALUES (?, ?, ?, ?)');
   insertStoryLike.run('sl-1', uMarcus.id, 'story-1', nowIso);
   insertStoryLike.run('sl-2', uSarah.id, 'story-1', nowIso);
   insertStoryLike.run('sl-3', uElena.id, 'story-2', nowIso);
 
-  // Reports (1 High Priority NO_CONSENT report, 1 standard report)
   const insertReport = db.prepare(`
-    INSERT INTO reports (id, reporterId, storyId, episodeId, category, priority, status, reason, moderatorNotes, resolvedById, resolvedAt, createdAt, updatedAt)
+    INSERT OR IGNORE INTO reports (id, reporterId, storyId, episodeId, category, priority, status, reason, moderatorNotes, resolvedById, resolvedAt, createdAt, updatedAt)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
@@ -657,6 +607,8 @@ That first week, my entire vocabulary consisted of four polite phrases. When you
     nowIso,
     nowIso
   );
+} catch (e) {
+  // Seed already present
 }
 
 // -------------------------------------------------------------
