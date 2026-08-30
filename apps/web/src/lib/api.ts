@@ -11,10 +11,10 @@ import type {
   SendOtpResponse
 } from '@storybabe/types';
 
-// Robust normalization for API_BASE regardless of trailing slash or format
-const rawApiBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api/v1';
-let normalizedBase = rawApiBase.trim().replace(/\/+$/, '');
-if (!normalizedBase.endsWith('/api/v1')) {
+// Strictly enforce dynamic NEXT_PUBLIC_API_URL without hardcoded localhost fallbacks
+const rawApiBase = (process.env.NEXT_PUBLIC_API_URL || '').trim().replace(/\/+$/, '');
+let normalizedBase = rawApiBase;
+if (normalizedBase && !normalizedBase.endsWith('/api/v1')) {
   normalizedBase = `${normalizedBase}/api/v1`;
 }
 const API_BASE = normalizedBase;
@@ -49,6 +49,10 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
 
   if (token && !isPublicAuthEndpoint) {
     headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  if (!API_BASE) {
+    throw new Error('Backend URL is not configured. Please set NEXT_PUBLIC_API_URL in Vercel environment variables.');
   }
 
   const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;

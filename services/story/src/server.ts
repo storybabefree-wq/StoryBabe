@@ -182,7 +182,7 @@ app.post('/stories/generate-poster', async (req: any, res: any): Promise<void> =
           headers: {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${apiKey.trim()}`,
-            'HTTP-Referer': 'http://localhost:3000',
+            'HTTP-Referer': process.env.APP_URL || 'https://storybabe-iota.vercel.app',
             'X-Title': 'StoryBabe'
           },
           body: JSON.stringify({
@@ -590,7 +590,7 @@ app.post('/stories/:id/view', async (req: any, res: any): Promise<void> => {
   try {
     const id = req.params.id as string;
     const { userId } = getUserContext(req);
-    const ip = req.ip || req.socket?.remoteAddress || '127.0.0.1';
+    const ip = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.ip || req.socket?.remoteAddress || 'unknown';
 
     await prisma.$transaction(async (tx) => {
       await tx.storyView.create({
@@ -785,7 +785,7 @@ app.post('/episodes/:id/view', async (req: any, res: any): Promise<void> => {
   try {
     const id = req.params.id as string;
     const { userId } = getUserContext(req);
-    const ip = req.ip || req.socket?.remoteAddress || '127.0.0.1';
+    const ip = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.ip || req.socket?.remoteAddress || 'unknown';
 
     const episode = await prisma.episode.findUnique({ where: { id } });
     if (!episode) {
