@@ -32,6 +32,7 @@ packages/*/.env.*
 logs/
 *.log
 tests/
+scratch/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*

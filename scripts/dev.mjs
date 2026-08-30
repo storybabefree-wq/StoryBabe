@@ -1,5 +1,14 @@
 import { spawn } from 'child_process';
 import path from 'path';
+import fs from 'fs';
+import dotenv from 'dotenv';
+
+// Automatically load StoryBabe.env if present, otherwise .env
+if (fs.existsSync('StoryBabe.env')) {
+  dotenv.config({ path: 'StoryBabe.env' });
+} else {
+  dotenv.config();
+}
 
 const services = [
   { name: 'AUTH      ', path: 'services/auth/dist/server.js', port: 4001 },
