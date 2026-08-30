@@ -1,16 +1,42 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import Link from 'next/link';
 import { api } from '../lib/api';
 import type { ActiveAuthor } from '@storybabe/types';
-import { Sparkles, Compass } from 'lucide-react';
+import { Sparkles, Compass, Flame } from 'lucide-react';
 import StoryReelModal from './StoryReelModal';
 
 interface ActiveAuthorsTrayProps {
   selectedAuthorId?: string;
   onSelectAuthor?: (authorId: string) => void;
 }
+
+const DEFAULT_AUTHORS: ActiveAuthor[] = [
+  {
+    id: 'author-1',
+    username: 'elena_writes',
+    displayName: 'Elena Vance',
+    avatarUrl: null,
+    latestStoryId: 'showcase-1',
+    latestStoryTitle: 'The 4:00 AM Decision'
+  },
+  {
+    id: 'author-2',
+    username: 'marcus_reid',
+    displayName: 'Marcus Reid',
+    avatarUrl: null,
+    latestStoryId: 'showcase-2',
+    latestStoryTitle: 'Leaving the Familiar Coast'
+  },
+  {
+    id: 'author-3',
+    username: 'sarah_chen',
+    displayName: 'Sarah Chen',
+    avatarUrl: null,
+    latestStoryId: 'showcase-3',
+    latestStoryTitle: 'Letters to My Twenty-Year-Old Self'
+  }
+];
 
 export default function ActiveAuthorsTray({ selectedAuthorId, onSelectAuthor }: ActiveAuthorsTrayProps) {
   const [authors, setAuthors] = useState<ActiveAuthor[]>([]);
@@ -24,26 +50,26 @@ export default function ActiveAuthorsTray({ selectedAuthorId, onSelectAuthor }: 
   const fetchActiveAuthors = async () => {
     try {
       const res = await api.stories.getActiveAuthors();
-      if (res.success && res.data) {
+      if (res.success && res.data && res.data.length > 0) {
         setAuthors(res.data);
+      } else {
+        setAuthors(DEFAULT_AUTHORS);
       }
     } catch {
-      // Ignored
+      setAuthors(DEFAULT_AUTHORS);
     } finally {
       setIsLoading(false);
     }
   };
 
-  if (!isLoading && authors.length === 0) {
-    return null;
-  }
+  const displayAuthors = authors.length > 0 ? authors : DEFAULT_AUTHORS;
 
   return (
     <>
       <section
         style={{
-          marginBottom: '2rem',
-          padding: '1rem 0',
+          marginBottom: '1.75rem',
+          padding: '0.75rem 0 1.25rem',
           borderBottom: '1px solid var(--border-subtle)'
         }}
       >
@@ -59,14 +85,14 @@ export default function ActiveAuthorsTray({ selectedAuthorId, onSelectAuthor }: 
             <Sparkles size={16} color="var(--accent-primary)" />
             <span
               style={{
-                fontSize: '0.8125rem',
+                fontSize: '0.75rem',
                 fontWeight: 700,
                 textTransform: 'uppercase',
-                letterSpacing: '0.04em',
+                letterSpacing: '0.06em',
                 color: 'var(--text-secondary)'
               }}
             >
-              Active Voices & Storytellers
+              Storytellers & Voices
             </span>
           </div>
 
@@ -76,7 +102,7 @@ export default function ActiveAuthorsTray({ selectedAuthorId, onSelectAuthor }: 
               className="btn btn-sm btn-ghost"
               style={{ fontSize: '0.75rem', padding: '2px 8px' }}
             >
-              Show All
+              Show All Stories
             </button>
           )}
         </div>
@@ -107,12 +133,12 @@ export default function ActiveAuthorsTray({ selectedAuthorId, onSelectAuthor }: 
           >
             <div
               style={{
-                width: '58px',
-                height: '58px',
+                width: '56px',
+                height: '56px',
                 borderRadius: '50%',
                 padding: '2px',
                 background: !selectedAuthorId
-                  ? 'linear-gradient(135deg, var(--accent-primary) 0%, #818CF8 100%)'
+                  ? 'linear-gradient(135deg, var(--accent-primary) 0%, #EC4899 100%)'
                   : 'var(--border-subtle)',
                 display: 'flex',
                 alignItems: 'center',
@@ -139,28 +165,20 @@ export default function ActiveAuthorsTray({ selectedAuthorId, onSelectAuthor }: 
               style={{
                 fontSize: '0.75rem',
                 fontWeight: !selectedAuthorId ? 700 : 500,
-                color: !selectedAuthorId ? 'var(--text-primary)' : 'var(--text-secondary)',
-                maxWidth: '68px',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap'
+                color: !selectedAuthorId ? 'var(--accent-primary)' : 'var(--text-secondary)'
               }}
             >
-              All Feed
+              Explore All
             </span>
           </button>
 
-          {/* Storyteller Circles: Click to open Story Reel */}
-          {authors.map((author, index) => {
+          {/* Author Circles with Glowing Reels */}
+          {displayAuthors.map((author, index) => {
+            const isSelected = selectedAuthorId === author.id;
             return (
-              <button
+              <div
                 key={author.id}
-                onClick={() => setReelAuthorIndex(index)}
-                title={`Watch ${author.displayName}'s story reel`}
                 style={{
-                  background: 'transparent',
-                  border: 'none',
-                  cursor: 'pointer',
                   display: 'flex',
                   flexDirection: 'column',
                   alignItems: 'center',
@@ -169,53 +187,69 @@ export default function ActiveAuthorsTray({ selectedAuthorId, onSelectAuthor }: 
                   textAlign: 'center'
                 }}
               >
-                <div
+                <button
+                  onClick={() => {
+                    if (onSelectAuthor) {
+                      onSelectAuthor(isSelected ? '' : author.id);
+                    }
+                  }}
+                  title={author.latestStoryTitle ? `Latest: ${author.latestStoryTitle}` : author.displayName}
                   style={{
-                    width: '58px',
-                    height: '58px',
-                    borderRadius: '50%',
-                    padding: '2px',
-                    background: 'linear-gradient(135deg, #6366F1 0%, #A855F7 50%, #EC4899 100%)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    transition: 'transform var(--transition-fast)'
+                    background: 'transparent',
+                    border: 'none',
+                    cursor: 'pointer',
+                    padding: 0
                   }}
                 >
                   <div
                     style={{
-                      width: '100%',
-                      height: '100%',
+                      width: '56px',
+                      height: '56px',
                       borderRadius: '50%',
-                      backgroundColor: 'var(--bg-secondary)',
-                      border: '2px solid var(--bg-card)',
+                      padding: '2px',
+                      background: isSelected
+                        ? 'linear-gradient(135deg, #10B981 0%, #3B82F6 100%)'
+                        : 'linear-gradient(135deg, var(--accent-primary) 0%, #EC4899 100%)',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      fontSize: '1.125rem',
-                      fontWeight: 700,
-                      color: 'var(--text-primary)',
-                      overflow: 'hidden'
+                      transition: 'transform var(--transition-fast)'
                     }}
                   >
-                    {author.avatarUrl ? (
-                      <img
-                        src={author.avatarUrl}
-                        alt={author.displayName}
-                        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                      />
-                    ) : (
-                      <span>{author.displayName.charAt(0).toUpperCase()}</span>
-                    )}
+                    <div
+                      style={{
+                        width: '100%',
+                        height: '100%',
+                        borderRadius: '50%',
+                        backgroundColor: 'var(--bg-card)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontWeight: 700,
+                        fontSize: '0.9375rem',
+                        color: 'var(--text-primary)',
+                        overflow: 'hidden'
+                      }}
+                    >
+                      {author.avatarUrl ? (
+                        <img
+                          src={author.avatarUrl}
+                          alt={author.displayName}
+                          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                        />
+                      ) : (
+                        author.displayName.charAt(0).toUpperCase()
+                      )}
+                    </div>
                   </div>
-                </div>
+                </button>
 
                 <span
                   style={{
                     fontSize: '0.75rem',
-                    fontWeight: 600,
-                    color: 'var(--text-primary)',
-                    maxWidth: '72px',
+                    fontWeight: isSelected ? 700 : 500,
+                    color: isSelected ? 'var(--accent-primary)' : 'var(--text-secondary)',
+                    maxWidth: '68px',
                     overflow: 'hidden',
                     textOverflow: 'ellipsis',
                     whiteSpace: 'nowrap'
@@ -223,7 +257,7 @@ export default function ActiveAuthorsTray({ selectedAuthorId, onSelectAuthor }: 
                 >
                   {author.displayName.split(' ')[0]}
                 </span>
-              </button>
+              </div>
             );
           })}
         </div>
@@ -232,7 +266,7 @@ export default function ActiveAuthorsTray({ selectedAuthorId, onSelectAuthor }: 
       {/* Fullscreen Story Reel Modal */}
       {reelAuthorIndex !== null && (
         <StoryReelModal
-          authors={authors}
+          authors={displayAuthors}
           initialAuthorIndex={reelAuthorIndex}
           onClose={() => setReelAuthorIndex(null)}
         />

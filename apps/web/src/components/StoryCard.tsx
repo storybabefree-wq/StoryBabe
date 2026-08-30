@@ -16,8 +16,6 @@ import {
   Layers,
   FileText,
   CheckCircle2,
-  PauseCircle,
-  Clock3,
   UserPlus,
   UserCheck,
   ArrowRight,
@@ -41,7 +39,6 @@ export default function StoryCard({ story, layoutMode = 'feed', onLikeToggle }: 
   const [isFollowing, setIsFollowing] = useState(false);
   const [isLiking, setIsLiking] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [isExpanded, setIsExpanded] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -159,50 +156,50 @@ export default function StoryCard({ story, layoutMode = 'feed', onLikeToggle }: 
 
   const posterBg =
     story.posterUrl ||
-    'https://images.unsplash.com/photo-1515694346937-94d85e41e6f0?auto=format&fit=crop&w=1000&q=80';
+    'linear-gradient(135deg, #1E1B4B 0%, #312E81 50%, #4338CA 100%)';
 
-  const onelinerText = story.oneliner || story.summary.slice(0, 120) + (story.summary.length > 120 ? '...' : '');
-  const styleMode = story.posterStyle || 'bottom-gradient';
+  const readTime = story.readingTimeMinutes || Math.max(1, Math.ceil((story.summary || story.content || '').split(/\s+/).length / 200));
 
   return (
     <>
       <article
-        className="card card-interactive"
+        className="card card-hoverable"
         style={{
+          borderRadius: 'var(--radius-xl)',
+          overflow: 'hidden',
           display: 'flex',
           flexDirection: 'column',
-          overflow: 'hidden',
-          border: '1px solid var(--border-subtle)',
-          borderRadius: 'var(--radius-lg)',
           backgroundColor: 'var(--bg-card)',
-          marginBottom: layoutMode === 'feed' ? '2.5rem' : '0'
+          border: '1px solid var(--border-subtle)',
+          position: 'relative'
         }}
       >
-        {/* 1. Header: Author Info, Time, Three Dots Dropdown Menu */}
+        {/* Top Author Signature Bar */}
         <div
           style={{
-            padding: '0.875rem 1.125rem',
+            padding: '1rem 1.25rem',
             display: 'flex',
-            justifyContent: 'space-between',
             alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '0.75rem',
             borderBottom: '1px solid var(--border-subtle)'
           }}
         >
           <Link
-            href={`/profile/${story.author.username}`}
+            href={`/profile/${story.author?.username || story.authorId}`}
             style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', textDecoration: 'none' }}
           >
-            {/* Avatar Ring */}
             <div
               style={{
-                width: '40px',
-                height: '40px',
+                width: '38px',
+                height: '38px',
                 borderRadius: '50%',
-                padding: '2px',
                 background: 'linear-gradient(135deg, var(--accent-primary) 0%, #EC4899 100%)',
+                padding: '1.5px',
                 display: 'flex',
                 alignItems: 'center',
-                justifyContent: 'center'
+                justifyContent: 'center',
+                flexShrink: 0
               }}
             >
               <div
@@ -211,399 +208,343 @@ export default function StoryCard({ story, layoutMode = 'feed', onLikeToggle }: 
                   height: '100%',
                   borderRadius: '50%',
                   backgroundColor: 'var(--bg-secondary)',
-                  border: '2px solid var(--bg-card)',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  fontSize: '0.9375rem',
+                  fontSize: '0.875rem',
                   fontWeight: 700,
-                  color: 'var(--text-primary)',
-                  overflow: 'hidden'
+                  color: 'var(--text-primary)'
                 }}
               >
-                {story.author.avatarUrl ? (
+                {story.author?.avatarUrl ? (
                   <img
                     src={story.author.avatarUrl}
                     alt={story.author.displayName}
-                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                    style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }}
                   />
                 ) : (
-                  <span>{story.author.displayName.charAt(0).toUpperCase()}</span>
+                  (story.author?.displayName || 'A').charAt(0).toUpperCase()
                 )}
               </div>
             </div>
-
             <div>
               <div style={{ fontSize: '0.9375rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.2 }}>
-                {story.author.displayName}
+                {story.author?.displayName || 'StoryBabe Author'}
               </div>
-              <div style={{ fontSize: '0.78125rem', color: 'var(--text-muted)' }}>
-                @{story.author.username} • {new Date(story.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                @{story.author?.username || 'author'}
               </div>
             </div>
           </Link>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', position: 'relative' }} ref={menuRef}>
-            {/* Status Badge */}
-            {story.status === 'COMPLETED' && (
-              <span className="badge badge-completed" style={{ fontSize: '0.6875rem' }}>
-                <CheckCircle2 size={10} />
-                <span>Complete</span>
-              </span>
-            )}
-            {story.status === 'ON_HOLD' && (
-              <span className="badge badge-onhold" style={{ fontSize: '0.6875rem' }} title={story.onHoldReason || ''}>
-                <PauseCircle size={10} />
-                <span>On Hold</span>
-              </span>
-            )}
-            {story.isInactive && (
-              <span className="badge badge-inactive" style={{ fontSize: '0.6875rem' }}>
-                <Clock3 size={10} />
-                <span>Inactive</span>
-              </span>
-            )}
-
-            {/* Three Dots (...) Options Menu Button */}
-            <button
-              onClick={() => setShowMenu(!showMenu)}
-              className="btn btn-sm btn-ghost"
-              title="Post options"
-              style={{ padding: '0.375rem', color: 'var(--text-secondary)' }}
-            >
-              <MoreHorizontal size={18} />
-            </button>
-
-            {/* Dropdown Menu */}
-            {showMenu && (
-              <div
-                className="card"
-                style={{
-                  position: 'absolute',
-                  top: '100%',
-                  right: 0,
-                  marginTop: '0.25rem',
-                  width: '210px',
-                  padding: '0.375rem',
-                  zIndex: 80,
-                  boxShadow: 'var(--shadow-modal)',
-                  backgroundColor: 'var(--bg-card)',
-                  border: '1px solid var(--border-subtle)',
-                  borderRadius: 'var(--radius-md)',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '2px'
-                }}
-              >
-                <button
-                  onClick={handleShare}
-                  className="btn btn-sm btn-ghost"
-                  style={{ width: '100%', justifyContent: 'flex-start', fontSize: '0.8125rem', gap: '0.5rem' }}
-                >
-                  {copied ? <Check size={14} color="var(--accent-primary)" /> : <Copy size={14} />}
-                  <span>{copied ? 'Link Copied!' : 'Copy Story Link'}</span>
-                </button>
-
-                {!isAuthor && (
-                  <button
-                    onClick={handleToggleFollow}
-                    className="btn btn-sm btn-ghost"
-                    style={{ width: '100%', justifyContent: 'flex-start', fontSize: '0.8125rem', gap: '0.5rem' }}
-                  >
-                    {isFollowing ? <UserCheck size={14} /> : <UserPlus size={14} />}
-                    <span>{isFollowing ? `Unfollow @${story.author.username}` : `Follow @${story.author.username}`}</span>
-                  </button>
-                )}
-
-                <button
-                  onClick={handleBookmark}
-                  className="btn btn-sm btn-ghost"
-                  style={{ width: '100%', justifyContent: 'flex-start', fontSize: '0.8125rem', gap: '0.5rem' }}
-                >
-                  <Bookmark size={14} fill={isBookmarked ? 'currentColor' : 'none'} />
-                  <span>{isBookmarked ? 'Remove Bookmark' : 'Bookmark Story'}</span>
-                </button>
-
-                {!isAuthor && (
-                  <button
-                    onClick={() => {
-                      setShowMenu(false);
-                      setShowReportModal(true);
-                    }}
-                    className="btn btn-sm btn-ghost"
-                    style={{ width: '100%', justifyContent: 'flex-start', fontSize: '0.8125rem', gap: '0.5rem', color: '#E11D48' }}
-                  >
-                    <Flag size={14} />
-                    <span>Report Story</span>
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* 2. Visual Story Poster with Stylized Oneliner Overlay */}
-        <Link
-          href={`/story/${story.id}`}
-          style={{
-            position: 'relative',
-            display: 'block',
-            width: '100%',
-            aspectRatio: layoutMode === 'feed' ? '16 / 10' : '4 / 3',
-            minHeight: '260px',
-            backgroundImage: `url(${posterBg})`,
-            backgroundSize: 'cover',
-            backgroundPosition: 'center',
-            textDecoration: 'none',
-            overflow: 'hidden'
-          }}
-        >
-          {/* Poster Gradient Backdrop */}
-          <div
-            style={{
-              position: 'absolute',
-              inset: 0,
-              background:
-                styleMode === 'center-spotlight'
-                  ? 'radial-gradient(circle at center, rgba(15,23,42,0.4) 0%, rgba(10,14,23,0.88) 100%)'
-                  : styleMode === 'top-minimal'
-                  ? 'linear-gradient(180deg, rgba(10,14,23,0.92) 0%, rgba(10,14,23,0.4) 60%, rgba(10,14,23,0.85) 100%)'
-                  : 'linear-gradient(180deg, rgba(10,14,23,0.15) 0%, rgba(10,14,23,0.65) 45%, rgba(10,14,23,0.95) 100%)',
-              display: 'flex',
-              flexDirection: 'column',
-              justifyContent:
-                styleMode === 'center-spotlight'
-                  ? 'center'
-                  : styleMode === 'top-minimal'
-                  ? 'flex-start'
-                  : 'flex-end',
-              padding: '1.75rem',
-              textAlign: styleMode === 'center-spotlight' ? 'center' : 'left'
-            }}
-          >
-            {/* Top Series / Single Type Pill */}
-            <div
+          {/* Format & Status Badges */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <span
               style={{
-                position: 'absolute',
-                top: '1rem',
-                left: '1rem',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.375rem',
-                backgroundColor: 'rgba(15, 23, 42, 0.75)',
-                backdropFilter: 'blur(6px)',
-                color: '#FFFFFF',
-                padding: '0.25rem 0.625rem',
-                borderRadius: 'var(--radius-sm)',
-                fontSize: '0.75rem',
-                fontWeight: 600,
-                letterSpacing: '0.02em',
-                border: '1px solid rgba(255, 255, 255, 0.15)'
-              }}
-            >
-              {story.type === 'SERIES' ? <Layers size={13} /> : <FileText size={13} />}
-              <span>{story.type === 'SERIES' ? `Series • ${story.episodesCount || 1} Parts` : 'Single Story'}</span>
-            </div>
-
-            {/* The Oneliner Hook Overlay */}
-            <div style={{ maxWidth: '90%', margin: styleMode === 'center-spotlight' ? '0 auto' : '0' }}>
-              <p
-                style={{
-                  fontFamily: 'var(--font-serif)',
-                  fontSize: layoutMode === 'feed' ? '1.5rem' : '1.25rem',
-                  fontWeight: 700,
-                  lineHeight: 1.3,
-                  letterSpacing: '-0.015em',
-                  color: '#FFFFFF',
-                  textShadow: '0 2px 8px rgba(0, 0, 0, 0.7)',
-                  marginBottom: '0.5rem'
-                }}
-              >
-                “{onelinerText}”
-              </p>
-              <div
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '0.375rem',
-                  fontSize: '0.8125rem',
-                  fontWeight: 600,
-                  color: '#CBD5E1',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.04em'
-                }}
-              >
-                <span>{story.title}</span>
-              </div>
-            </div>
-          </div>
-        </Link>
-
-        {/* 3. Action Row: Like, Comment, Bookmark, Share */}
-        <div
-          style={{
-            padding: '0.75rem 1.125rem 0.5rem',
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center'
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-            {/* Like / Connected */}
-            <button
-              onClick={handleLike}
-              disabled={isLiking}
-              title="I connected with this"
-              style={{
-                background: 'transparent',
-                border: 'none',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.375rem',
-                color: isLiked ? 'var(--accent-rose)' : 'var(--text-primary)',
-                transition: 'transform var(--transition-fast)'
-              }}
-            >
-              <Heart size={22} fill={isLiked ? 'var(--accent-rose)' : 'none'} color={isLiked ? 'var(--accent-rose)' : 'currentColor'} />
-              <span style={{ fontSize: '0.875rem', fontWeight: 600 }}>{likesCount}</span>
-            </button>
-
-            {/* Comment Bubble */}
-            <Link
-              href={`/story/${story.id}#comments`}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.375rem',
-                color: 'var(--text-primary)',
-                textDecoration: 'none'
-              }}
-            >
-              <MessageCircle size={22} />
-              <span style={{ fontSize: '0.875rem', fontWeight: 600 }}>{story.commentsCount || 0}</span>
-            </Link>
-
-            {/* Share */}
-            <button
-              onClick={handleShare}
-              title="Copy link to story"
-              style={{
-                background: 'transparent',
-                border: 'none',
-                cursor: 'pointer',
-                color: 'var(--text-primary)',
-                display: 'flex',
+                fontSize: '0.6875rem',
+                fontWeight: 700,
+                letterSpacing: '0.04em',
+                padding: '0.2rem 0.5rem',
+                borderRadius: 'var(--radius-xs)',
+                backgroundColor: story.type === 'SERIES' ? 'rgba(168, 85, 247, 0.12)' : 'rgba(59, 130, 246, 0.12)',
+                color: story.type === 'SERIES' ? '#A855F7' : 'var(--accent-primary)',
+                border: story.type === 'SERIES' ? '1px solid rgba(168, 85, 247, 0.25)' : '1px solid rgba(59, 130, 246, 0.25)',
+                display: 'inline-flex',
                 alignItems: 'center',
                 gap: '0.25rem'
               }}
             >
-              <Share2 size={20} />
-              {copied && <span style={{ fontSize: '0.75rem', color: 'var(--accent-primary)', fontWeight: 600 }}>Copied!</span>}
-            </button>
-          </div>
+              {story.type === 'SERIES' ? <Layers size={11} /> : <FileText size={11} />}
+              <span>{story.type === 'SERIES' ? `SERIES • ${story.episodesCount || 1} PARTS` : 'SINGLE'}</span>
+            </span>
 
-          {/* Bookmark */}
-          <button
-            onClick={handleBookmark}
-            title="Bookmark story"
-            style={{
-              background: 'transparent',
-              border: 'none',
-              cursor: 'pointer',
-              color: isBookmarked ? 'var(--accent-primary)' : 'var(--text-primary)'
-            }}
-          >
-            <Bookmark size={22} fill={isBookmarked ? 'var(--accent-primary)' : 'none'} />
-          </button>
+            {story.status === 'COMPLETED' && (
+              <span className="badge badge-completed" style={{ fontSize: '0.6875rem' }}>
+                <CheckCircle2 size={11} />
+                <span>COMPLETED</span>
+              </span>
+            )}
+
+            {/* Overflow menu */}
+            <div style={{ position: 'relative' }} ref={menuRef}>
+              <button
+                type="button"
+                onClick={() => setShowMenu(!showMenu)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--text-muted)',
+                  cursor: 'pointer',
+                  padding: '0.25rem',
+                  display: 'flex',
+                  alignItems: 'center'
+                }}
+              >
+                <MoreHorizontal size={18} />
+              </button>
+
+              {showMenu && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: '100%',
+                    right: 0,
+                    marginTop: '0.25rem',
+                    width: '180px',
+                    backgroundColor: 'var(--bg-surface)',
+                    border: '1px solid var(--border-medium)',
+                    borderRadius: 'var(--radius-md)',
+                    boxShadow: 'var(--shadow-modal)',
+                    padding: '0.375rem',
+                    zIndex: 60
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={handleShare}
+                    className="btn btn-sm btn-ghost"
+                    style={{ width: '100%', justifyContent: 'flex-start', fontSize: '0.8125rem' }}
+                  >
+                    {copied ? <Check size={14} style={{ color: '#22c55e' }} /> : <Copy size={14} />}
+                    <span>{copied ? 'Link Copied!' : 'Copy Link'}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleBookmark}
+                    className="btn btn-sm btn-ghost"
+                    style={{ width: '100%', justifyContent: 'flex-start', fontSize: '0.8125rem' }}
+                  >
+                    <Bookmark size={14} fill={isBookmarked ? 'currentColor' : 'none'} />
+                    <span>{isBookmarked ? 'Remove Bookmark' : 'Bookmark'}</span>
+                  </button>
+
+                  {!isAuthor && (
+                    <button
+                      type="button"
+                      onClick={handleToggleFollow}
+                      className="btn btn-sm btn-ghost"
+                      style={{ width: '100%', justifyContent: 'flex-start', fontSize: '0.8125rem' }}
+                    >
+                      {isFollowing ? <UserCheck size={14} /> : <UserPlus size={14} />}
+                      <span>{isFollowing ? 'Unfollow Author' : 'Follow Author'}</span>
+                    </button>
+                  )}
+
+                  {!isAuthor && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowMenu(false);
+                        setShowReportModal(true);
+                      }}
+                      className="btn btn-sm btn-ghost"
+                      style={{ width: '100%', justifyContent: 'flex-start', fontSize: '0.8125rem', color: '#E11D48' }}
+                    >
+                      <Flag size={14} />
+                      <span>Report Story</span>
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
         </div>
 
-        {/* 4. Description, Tags & Read More */}
-        <div style={{ padding: '0.25rem 1.125rem 1.125rem', display: 'flex', flexDirection: 'column', gap: '0.625rem' }}>
-          {/* Story Title */}
-          <Link href={`/story/${story.id}`} style={{ textDecoration: 'none' }}>
-            <h2
-              style={{
-                fontFamily: 'var(--font-serif)',
-                fontSize: '1.25rem',
-                fontWeight: 700,
-                color: 'var(--text-primary)',
-                lineHeight: 1.3
-              }}
-            >
-              {story.title}
-            </h2>
-          </Link>
+        {/* Visual Poster Banner */}
+        <Link
+          href={`/story/${story.id}`}
+          style={{
+            position: 'relative',
+            width: '100%',
+            aspectRatio: layoutMode === 'grid' ? '16 / 10' : '16 / 9',
+            minHeight: layoutMode === 'grid' ? '180px' : '220px',
+            background: posterBg,
+            backgroundSize: 'cover',
+            backgroundPosition: 'center',
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'flex-end',
+            padding: '1.5rem',
+            textDecoration: 'none',
+            overflow: 'hidden'
+          }}
+        >
+          {/* Subtle dark gradient overlay for text legibility */}
+          <div
+            style={{
+              position: 'absolute',
+              inset: 0,
+              background: 'linear-gradient(180deg, rgba(0,0,0,0.1) 0%, rgba(0,0,0,0.75) 100%)'
+            }}
+          />
 
-          {/* Summary Snippet with Expandable Toggle */}
+          {/* Oneliner Hook Overlay */}
+          {story.oneliner && (
+            <div style={{ position: 'relative', zIndex: 2, marginBottom: '0.5rem' }}>
+              <div
+                style={{
+                  display: 'inline-block',
+                  backgroundColor: 'rgba(0, 0, 0, 0.45)',
+                  backdropFilter: 'blur(8px)',
+                  padding: '0.35rem 0.75rem',
+                  borderRadius: 'var(--radius-sm)',
+                  border: '1px solid rgba(255, 255, 255, 0.2)',
+                  color: '#F8FAFC',
+                  fontSize: '0.8125rem',
+                  fontWeight: 600,
+                  fontStyle: 'italic',
+                  maxWidth: '90%',
+                  lineHeight: 1.4
+                }}
+              >
+                "{story.oneliner}"
+              </div>
+            </div>
+          )}
+
+          {/* Main Story Title */}
+          <h2
+            style={{
+              position: 'relative',
+              zIndex: 2,
+              fontFamily: 'var(--font-serif)',
+              fontSize: layoutMode === 'grid' ? '1.25rem' : '1.65rem',
+              fontWeight: 800,
+              lineHeight: 1.2,
+              letterSpacing: '-0.02em',
+              color: '#FFFFFF',
+              textShadow: '0 2px 8px rgba(0, 0, 0, 0.6)',
+              margin: 0
+            }}
+          >
+            {story.title}
+          </h2>
+        </Link>
+
+        {/* Card Body Snippet */}
+        <div style={{ padding: '1.125rem 1.25rem', display: 'flex', flexDirection: 'column', gap: '0.75rem', flex: 1 }}>
           <p
             style={{
               fontSize: '0.9375rem',
               color: 'var(--text-secondary)',
-              lineHeight: 1.55,
-              marginBottom: 0
+              lineHeight: 1.6,
+              margin: 0,
+              display: '-webkit-box',
+              WebkitLineClamp: layoutMode === 'grid' ? 2 : 3,
+              WebkitBoxOrient: 'vertical',
+              overflow: 'hidden'
             }}
           >
-            {isExpanded ? story.summary : story.summary.slice(0, 160) + (story.summary.length > 160 ? '...' : '')}
-            {story.summary.length > 160 && (
-              <button
-                onClick={() => setIsExpanded(!isExpanded)}
-                style={{
-                  background: 'transparent',
-                  border: 'none',
-                  color: 'var(--text-muted)',
-                  fontSize: '0.875rem',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  marginLeft: '0.375rem'
-                }}
-              >
-                {isExpanded ? 'less' : 'more'}
-              </button>
-            )}
+            {(story.summary || story.content || story.oneliner || 'Personal experience story chapter.').replace(/[#*`_]/g, '')}
           </p>
 
-          {/* Tags Bar */}
+          {/* Tags */}
           {story.tags && story.tags.length > 0 && (
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.375rem', margin: '0.25rem 0' }}>
-              {story.tags.map((tag) => (
-                <span key={tag} className="badge badge-tag" style={{ fontSize: '0.75rem' }}>
-                  #{tag}
-                </span>
-              ))}
+            <div style={{ display: 'flex', gap: '0.375rem', flexWrap: 'wrap', marginTop: '0.25rem' }}>
+              {story.tags.slice(0, 4).map((tag: any, idx: number) => {
+                const tagName = typeof tag === 'string' ? tag : tag.name;
+                return (
+                  <span
+                    key={idx}
+                    style={{
+                      fontSize: '0.75rem',
+                      fontWeight: 600,
+                      color: 'var(--text-muted)',
+                      backgroundColor: 'var(--bg-secondary)',
+                      padding: '0.2rem 0.5rem',
+                      borderRadius: 'var(--radius-xs)'
+                    }}
+                  >
+                    #{tagName}
+                  </span>
+                );
+              })}
             </div>
           )}
 
-          {/* Bottom Metrics & Read Action */}
+          {/* Card Footer Interaction Row */}
           <div
             style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              paddingTop: '0.75rem',
+              marginTop: 'auto',
+              paddingTop: '0.875rem',
               borderTop: '1px solid var(--border-subtle)',
-              fontSize: '0.8125rem',
-              color: 'var(--text-muted)'
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '0.5rem'
             }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.875rem' }}>
-              <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                <Eye size={14} />
-                <span>{story.viewsCount} views</span>
-              </span>
+            {/* Left Interactions: Likes, Comments, Read Time */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+              {/* Like Button */}
+              <button
+                type="button"
+                onClick={handleLike}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.35rem',
+                  color: isLiked ? '#E11D48' : 'var(--text-muted)',
+                  fontSize: '0.84375rem',
+                  fontWeight: 600,
+                  transition: 'transform var(--transition-fast)'
+                }}
+                title="React"
+              >
+                <Heart size={18} fill={isLiked ? '#E11D48' : 'none'} />
+                <span>{likesCount}</span>
+              </button>
 
-              <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                <Clock size={14} />
-                <span>{story.readingTimeMinutes} min read</span>
+              {/* Comments Link */}
+              <Link
+                href={`/story/${story.id}#comments`}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.35rem',
+                  color: 'var(--text-muted)',
+                  fontSize: '0.84375rem',
+                  fontWeight: 600,
+                  textDecoration: 'none'
+                }}
+                title="Comments"
+              >
+                <MessageCircle size={18} />
+                <span>{story.commentsCount || 0}</span>
+              </Link>
+
+              {/* Reading time */}
+              <span
+                style={{
+                  fontSize: '0.75rem',
+                  color: 'var(--text-muted)',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.25rem'
+                }}
+              >
+                <Clock size={13} />
+                <span>{readTime} min</span>
               </span>
             </div>
 
+            {/* Right: Read Story CTA */}
             <Link
               href={`/story/${story.id}`}
-              className="btn btn-sm btn-primary"
-              style={{ gap: '0.375rem', padding: '0.375rem 0.875rem', fontWeight: 600 }}
+              className="btn btn-sm btn-ghost"
+              style={{
+                color: 'var(--accent-primary)',
+                fontWeight: 700,
+                fontSize: '0.8125rem',
+                gap: '0.25rem',
+                padding: '0.25rem 0.5rem'
+              }}
             >
-              <span>Read Story</span>
+              <span>Read Chapter</span>
               <ArrowRight size={14} />
             </Link>
           </div>

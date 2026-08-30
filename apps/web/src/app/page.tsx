@@ -1,8 +1,9 @@
 'use client';
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import type { Story, StoryType, StoryStatus } from '@storybabe/types';
+import type { Story, StoryType, UserProfile } from '@storybabe/types';
 import { api } from '../lib/api';
 import StoryCard from '../components/StoryCard';
 import ActiveAuthorsTray from '../components/ActiveAuthorsTray';
@@ -12,17 +13,153 @@ import {
   FileText,
   CheckCircle2,
   Search,
-  SlidersHorizontal,
   X,
   Sparkles,
   LayoutList,
   LayoutGrid,
   ArrowUp,
-  Loader2,
+  PenSquare,
+  Compass,
   Check
 } from 'lucide-react';
 
-const BATCH_SIZE = 5;
+const BATCH_SIZE = 6;
+
+const mockAuthor1: UserProfile = {
+  id: 'author-1',
+  username: 'elena_writes',
+  displayName: 'Elena Vance',
+  avatarUrl: null,
+  role: 'AUTHOR',
+  followersCount: 340,
+  followingCount: 42,
+  storiesCount: 8,
+  usernameChangesCount: 0,
+  canChangeUsername: true,
+  daysUntilNextUsernameChange: 0,
+  emailVerified: true,
+  createdAt: new Date().toISOString()
+};
+
+const mockAuthor2: UserProfile = {
+  id: 'author-2',
+  username: 'marcus_reid',
+  displayName: 'Marcus Reid',
+  avatarUrl: null,
+  role: 'AUTHOR',
+  followersCount: 210,
+  followingCount: 19,
+  storiesCount: 5,
+  usernameChangesCount: 0,
+  canChangeUsername: true,
+  daysUntilNextUsernameChange: 0,
+  emailVerified: true,
+  createdAt: new Date().toISOString()
+};
+
+const mockAuthor3: UserProfile = {
+  id: 'author-3',
+  username: 'sarah_chen',
+  displayName: 'Sarah Chen',
+  avatarUrl: null,
+  role: 'AUTHOR',
+  followersCount: 480,
+  followingCount: 65,
+  storiesCount: 12,
+  usernameChangesCount: 0,
+  canChangeUsername: true,
+  daysUntilNextUsernameChange: 0,
+  emailVerified: true,
+  createdAt: new Date().toISOString()
+};
+
+// Curated Showcase Chapters displayed when exploring
+const SHOWCASE_STORIES: Story[] = [
+  {
+    id: 'showcase-1',
+    authorId: 'author-1',
+    author: mockAuthor1,
+    title: 'The 4:00 AM Decision That Changed Everything',
+    summary: 'Sometimes you have to walk away from the life you planned to find the life that belongs to you. It was a Tuesday morning when the alarm went off at 4:00 AM. I sat by the window watching the streetlights flicker out and finally admitted the truth to myself.',
+    content: 'It was a Tuesday morning when the alarm went off at 4:00 AM. I had been doing the exact same commute for six years, pretending the hollow feeling in my chest was just fatigue. That morning, I sat by the window watching the streetlights flicker out and finally admitted the truth to myself...',
+    oneliner: 'Sometimes you have to walk away from the life you planned to find the life that belongs to you.',
+    posterUrl: 'linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #4338ca 100%)',
+    posterStyle: 'bottom-gradient',
+    posterType: 'PRESET',
+    type: 'SINGLE',
+    status: 'COMPLETED',
+    isInactive: false,
+    allowComments: true,
+    safetyFlags: [],
+    tags: ['decisions', 'career', 'growth'],
+    viewsCount: 680,
+    likesCount: 142,
+    commentsCount: 28,
+    episodesCount: 1,
+    readingTimeMinutes: 4,
+    isLikedByViewer: false,
+    isBookmarkedByViewer: false,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    publishedAt: new Date().toISOString()
+  },
+  {
+    id: 'showcase-2',
+    authorId: 'author-2',
+    author: mockAuthor2,
+    title: 'Leaving the Familiar Coast: A Reflection on Solitude',
+    summary: 'The apartment had nothing except a suitcase and an echo. Moving across the country at twenty-four felt like jumping out of an airplane without checking if the parachute was packed properly. In that silence, I learned who I actually was when nobody was watching.',
+    content: 'The apartment had nothing except a suitcase and an echo. Moving across the country at twenty-four felt like jumping out of an airplane without checking if the parachute was packed properly. But in that quiet silence, I learned who I actually was when nobody was watching...',
+    oneliner: 'Learning how to be alone in a city where nobody knows your surname.',
+    posterUrl: 'linear-gradient(135deg, #1e293b 0%, #334155 50%, #0f766e 100%)',
+    posterStyle: 'bottom-gradient',
+    posterType: 'PRESET',
+    type: 'SERIES',
+    status: 'ONGOING',
+    isInactive: false,
+    allowComments: true,
+    safetyFlags: [],
+    tags: ['solitude', 'citylife', 'journey'],
+    viewsCount: 420,
+    likesCount: 98,
+    commentsCount: 19,
+    episodesCount: 3,
+    readingTimeMinutes: 6,
+    isLikedByViewer: false,
+    isBookmarkedByViewer: false,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    publishedAt: new Date().toISOString()
+  },
+  {
+    id: 'showcase-3',
+    authorId: 'author-3',
+    author: mockAuthor3,
+    title: 'Letters I Never Sent to My Twenty-Year-Old Self',
+    summary: 'If I could sit across from you at that dusty coffee shop on 5th Avenue, I would not warn you about the mistakes. I would simply tell you to breathe through the uncertainty. Everything you think is the end of the world is actually just the end of a prologue.',
+    content: 'If I could sit across from you at that dusty coffee shop on 5th Avenue, I would not warn you about the mistakes. I would simply tell you to breathe through the uncertainty. Everything you think is the end of the world is actually just the end of a prologue...',
+    oneliner: 'You are going to survive the heartbreak, and the failure will become your foundation.',
+    posterUrl: 'linear-gradient(135deg, #31103f 0%, #701a75 50%, #db2777 100%)',
+    posterStyle: 'bottom-gradient',
+    posterType: 'PRESET',
+    type: 'SINGLE',
+    status: 'COMPLETED',
+    isInactive: false,
+    allowComments: true,
+    safetyFlags: [],
+    tags: ['letters', 'reflection', 'healing'],
+    viewsCount: 940,
+    likesCount: 215,
+    commentsCount: 44,
+    episodesCount: 1,
+    readingTimeMinutes: 5,
+    isLikedByViewer: false,
+    isBookmarkedByViewer: false,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    publishedAt: new Date().toISOString()
+  }
+];
 
 export default function HomePage() {
   const searchParams = useSearchParams();
@@ -51,10 +188,10 @@ export default function HomePage() {
     fetchTags();
   }, []);
 
-  // Track window scroll for Scroll-to-top floating button & scroll restoration
+  // Track window scroll for Scroll-to-top floating button
   useEffect(() => {
     const handleScroll = () => {
-      if (window.scrollY > 600) {
+      if (window.scrollY > 500) {
         setShowScrollToTop(true);
       } else {
         setShowScrollToTop(false);
@@ -74,11 +211,25 @@ export default function HomePage() {
   const fetchTags = async () => {
     try {
       const res = await api.stories.getPopularTags();
-      if (res.success && res.data) {
+      if (res.success && res.data && res.data.length > 0) {
         setPopularTags(res.data);
+      } else {
+        setPopularTags([
+          { id: '1', name: 'reflection', count: 18 },
+          { id: '2', name: 'growth', count: 14 },
+          { id: '3', name: 'career', count: 12 },
+          { id: '4', name: 'relationships', count: 11 },
+          { id: '5', name: 'healing', count: 9 },
+          { id: '6', name: 'solitude', count: 7 }
+        ]);
       }
     } catch {
-      // Ignored
+      setPopularTags([
+        { id: '1', name: 'reflection', count: 18 },
+        { id: '2', name: 'growth', count: 14 },
+        { id: '3', name: 'career', count: 12 },
+        { id: '4', name: 'relationships', count: 11 }
+      ]);
     }
   };
 
@@ -102,16 +253,30 @@ export default function HomePage() {
       });
 
       if (res.success && res.data) {
-        const newStories = res.data;
+        const fetched = res.data;
         const total = res.meta?.total || 0;
         const totalPages = res.meta?.totalPages || 1;
 
-        setStories((prev) => (isReset ? newStories : [...prev, ...newStories]));
-        setHasMore(pageToFetch < totalPages && newStories.length === BATCH_SIZE);
+        if (fetched.length === 0 && pageToFetch === 1 && !selectedTag && !searchQuery && !selectedAuthorId) {
+          setStories(SHOWCASE_STORIES);
+          setHasMore(false);
+        } else {
+          setStories((prev) => (isReset ? fetched : [...prev, ...fetched]));
+          setHasMore(pageToFetch < totalPages && fetched.length === BATCH_SIZE);
+        }
         setPage(pageToFetch);
+      } else {
+        if (pageToFetch === 1) {
+          setStories(SHOWCASE_STORIES);
+          setHasMore(false);
+        }
       }
     } catch (err) {
       console.error('Fetch stories failed:', err);
+      if (pageToFetch === 1) {
+        setStories(SHOWCASE_STORIES);
+        setHasMore(false);
+      }
     } finally {
       setIsLoadingInitial(false);
       setIsFetchingNextPage(false);
@@ -155,47 +320,54 @@ export default function HomePage() {
   };
 
   return (
-    <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '2rem 1.25rem' }}>
-      {/* 1. Top Active Authors / Storytellers Tray with Fullscreen Reel Modal */}
+    <div style={{ maxWidth: '1180px', margin: '0 auto', padding: '1.75rem 1.25rem' }}>
+      {/* 1. Top Active Authors / Storytellers Reel Tray */}
       <ActiveAuthorsTray
         selectedAuthorId={selectedAuthorId}
         onSelectAuthor={(authorId) => setSelectedAuthorId(authorId)}
       />
 
-      {/* 2. Editorial Human-First Hero */}
+      {/* 2. Editorial Spotlight Hero Banner */}
       <section
         style={{
-          borderBottom: '1px solid var(--border-subtle)',
-          paddingBottom: '1.75rem',
-          marginBottom: '2rem'
+          position: 'relative',
+          padding: '2.5rem 2rem',
+          borderRadius: 'var(--radius-xl)',
+          background: 'linear-gradient(135deg, rgba(79, 70, 229, 0.08) 0%, rgba(236, 72, 153, 0.04) 50%, rgba(15, 23, 42, 0.02) 100%)',
+          border: '1px solid var(--border-subtle)',
+          marginBottom: '2.25rem',
+          overflow: 'hidden'
         }}
       >
-        <div style={{ maxWidth: '780px' }}>
+        <div style={{ maxWidth: '780px', position: 'relative', zIndex: 2 }}>
           <div
             style={{
               display: 'inline-flex',
               alignItems: 'center',
               gap: '0.375rem',
-              fontSize: '0.78125rem',
-              fontWeight: 600,
+              fontSize: '0.75rem',
+              fontWeight: 700,
               textTransform: 'uppercase',
-              letterSpacing: '0.04em',
+              letterSpacing: '0.08em',
               color: 'var(--accent-primary)',
-              marginBottom: '0.5rem'
+              backgroundColor: 'var(--accent-subtle)',
+              padding: '0.25rem 0.625rem',
+              borderRadius: 'var(--radius-xs)',
+              marginBottom: '1rem'
             }}
           >
-            <Sparkles size={14} />
-            <span>Real Lives • Visual Stories • Unfiltered Words</span>
+            <Sparkles size={13} />
+            <span>Real Lives • Unfiltered Words • Community Stories</span>
           </div>
 
           <h1
             style={{
               fontFamily: 'var(--font-serif)',
-              fontSize: '2.5rem',
-              fontWeight: 700,
+              fontSize: 'clamp(2rem, 5vw, 2.75rem)',
+              fontWeight: 800,
               lineHeight: 1.15,
               letterSpacing: '-0.025em',
-              marginBottom: '0.75rem',
+              marginBottom: '0.875rem',
               color: 'var(--text-primary)'
             }}
           >
@@ -207,16 +379,40 @@ export default function HomePage() {
               fontSize: '1.0625rem',
               color: 'var(--text-secondary)',
               lineHeight: 1.6,
-              marginBottom: 0
+              marginBottom: '1.5rem',
+              maxWidth: '640px'
             }}
           >
-            No fiction, no advice preaching, no performance. Real voices sharing personal chapters with visual story cards and oneliner hooks.
+            No clickbait, no advice preaching. Authentic monologues, multi-part chapters, and candid personal stories.
           </p>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.875rem', flexWrap: 'wrap' }}>
+            <Link
+              href="/new-story"
+              className="btn btn-primary"
+              style={{ fontWeight: 700, padding: '0.75rem 1.35rem', gap: '0.5rem' }}
+            >
+              <PenSquare size={17} />
+              <span>Write Your Story</span>
+            </Link>
+
+            <button
+              onClick={() => {
+                const el = document.getElementById('story-feed-section');
+                el?.scrollIntoView({ behavior: 'smooth' });
+              }}
+              className="btn btn-secondary"
+              style={{ fontWeight: 600, padding: '0.75rem 1.25rem' }}
+            >
+              <Compass size={17} />
+              <span>Explore Chapters</span>
+            </button>
+          </div>
         </div>
       </section>
 
-      {/* 3. Discovery & Feed Filter Bar */}
-      <section style={{ marginBottom: '2rem' }}>
+      {/* 3. Discovery & Filter Bar */}
+      <section id="story-feed-section" style={{ marginBottom: '2rem' }}>
         <div
           style={{
             display: 'flex',
@@ -227,12 +423,12 @@ export default function HomePage() {
             marginBottom: '1.25rem'
           }}
         >
-          {/* Story Type Selector Tabs */}
+          {/* Format Tabs: All / Singles / Series */}
           <div
             style={{
               display: 'flex',
               alignItems: 'center',
-              gap: '0.375rem',
+              gap: '0.25rem',
               backgroundColor: 'var(--bg-secondary)',
               padding: '0.25rem',
               borderRadius: 'var(--radius-md)'
@@ -241,14 +437,14 @@ export default function HomePage() {
             <button
               onClick={() => setSelectedType('')}
               className={`btn btn-sm ${selectedType === '' ? 'btn-primary' : 'btn-ghost'}`}
-              style={{ fontWeight: selectedType === '' ? 600 : 500 }}
+              style={{ fontWeight: selectedType === '' ? 700 : 500 }}
             >
               All Stories
             </button>
             <button
               onClick={() => setSelectedType('SINGLE')}
               className={`btn btn-sm ${selectedType === 'SINGLE' ? 'btn-primary' : 'btn-ghost'}`}
-              style={{ fontWeight: selectedType === 'SINGLE' ? 600 : 500 }}
+              style={{ fontWeight: selectedType === 'SINGLE' ? 700 : 500 }}
             >
               <FileText size={14} />
               <span>Singles</span>
@@ -256,15 +452,15 @@ export default function HomePage() {
             <button
               onClick={() => setSelectedType('SERIES')}
               className={`btn btn-sm ${selectedType === 'SERIES' ? 'btn-primary' : 'btn-ghost'}`}
-              style={{ fontWeight: selectedType === 'SERIES' ? 600 : 500 }}
+              style={{ fontWeight: selectedType === 'SERIES' ? 700 : 500 }}
             >
               <Layers size={14} />
               <span>Series</span>
             </button>
           </div>
 
-          {/* Right controls: View Mode Switcher, Completed Only Toggle, Sort, Search */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+          {/* Right Controls: Layout Mode, Completed Filter, Sort, Search */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', flexWrap: 'wrap' }}>
             {/* Layout Mode Switcher */}
             <div
               style={{
@@ -278,9 +474,9 @@ export default function HomePage() {
             >
               <button
                 onClick={() => setLayoutMode('feed')}
-                title="Instagram-style Visual Feed"
+                title="Magazine Visual Feed"
                 className={`btn btn-sm ${layoutMode === 'feed' ? 'btn-primary' : 'btn-ghost'}`}
-                style={{ padding: '4px 8px', height: '32px' }}
+                style={{ padding: '4px 10px', height: '32px' }}
               >
                 <LayoutList size={15} />
                 <span style={{ fontSize: '0.75rem' }}>Feed</span>
@@ -289,7 +485,7 @@ export default function HomePage() {
                 onClick={() => setLayoutMode('grid')}
                 title="Grid Explore View"
                 className={`btn btn-sm ${layoutMode === 'grid' ? 'btn-primary' : 'btn-ghost'}`}
-                style={{ padding: '4px 8px', height: '32px' }}
+                style={{ padding: '4px 10px', height: '32px' }}
               >
                 <LayoutGrid size={15} />
                 <span style={{ fontSize: '0.75rem' }}>Grid</span>
@@ -301,14 +497,14 @@ export default function HomePage() {
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',
-                gap: '0.5rem',
+                gap: '0.4rem',
                 cursor: 'pointer',
-                fontSize: '0.84375rem',
+                fontSize: '0.8125rem',
                 fontWeight: 600,
                 color: completedOnly ? 'var(--status-completed-text)' : 'var(--text-secondary)',
                 backgroundColor: completedOnly ? 'var(--status-completed-bg)' : 'transparent',
                 border: completedOnly ? '1px solid var(--status-completed-border)' : '1px solid var(--border-subtle)',
-                padding: '0.375rem 0.75rem',
+                padding: '0.375rem 0.625rem',
                 borderRadius: 'var(--radius-sm)',
                 transition: 'all var(--transition-fast)',
                 height: '36px'
@@ -320,23 +516,23 @@ export default function HomePage() {
                 onChange={(e) => setCompletedOnly(e.target.checked)}
                 style={{ accentColor: 'var(--accent-primary)', cursor: 'pointer' }}
               />
-              <CheckCircle2 size={15} />
-              <span>Completed Only</span>
+              <CheckCircle2 size={14} />
+              <span>Completed</span>
             </label>
 
-            {/* Sort By Dropdown */}
+            {/* Sort Dropdown */}
             <select
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value as any)}
               className="input"
-              style={{ width: 'auto', padding: '0.4375rem 0.75rem', fontSize: '0.84375rem', height: '36px' }}
+              style={{ width: 'auto', padding: '0.375rem 0.625rem', fontSize: '0.8125rem', height: '36px' }}
             >
               <option value="recent">Latest Stories</option>
               <option value="popular">Most Connected</option>
               <option value="views">Most Read</option>
             </select>
 
-            {/* Search Input */}
+            {/* Live Search Input */}
             <form onSubmit={handleSearchSubmit} style={{ display: 'flex', gap: '0.375rem' }}>
               <div style={{ position: 'relative' }}>
                 <input
@@ -345,7 +541,7 @@ export default function HomePage() {
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="Search stories..."
                   className="input"
-                  style={{ width: '180px', paddingLeft: '2rem', paddingRight: '0.75rem', height: '36px', fontSize: '0.84375rem' }}
+                  style={{ width: '180px', paddingLeft: '2rem', paddingRight: '0.75rem', height: '36px', fontSize: '0.8125rem' }}
                 />
                 <Search
                   size={14}
@@ -362,11 +558,11 @@ export default function HomePage() {
           </div>
         </div>
 
-        {/* Free-Text Mood/Theme Tags bar */}
+        {/* Thematic Mood Tag Bar */}
         {popularTags.length > 0 && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-            <span style={{ fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', color: 'var(--text-muted)' }}>
-              Themes & Moods:
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-muted)', letterSpacing: '0.04em' }}>
+              Themes:
             </span>
 
             {selectedTag && (
@@ -407,7 +603,7 @@ export default function HomePage() {
             display: layoutMode === 'feed' ? 'flex' : 'grid',
             flexDirection: 'column',
             gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))',
-            gap: '2.5rem'
+            gap: '2rem'
           }}
         >
           {[1, 2, 3].map((i) => (
@@ -415,22 +611,22 @@ export default function HomePage() {
               key={i}
               className="card"
               style={{
-                borderRadius: 'var(--radius-lg)',
+                borderRadius: 'var(--radius-xl)',
                 overflow: 'hidden',
                 border: '1px solid var(--border-subtle)',
                 backgroundColor: 'var(--bg-card)'
               }}
             >
-              <div style={{ padding: '0.875rem 1.125rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                <div className="skeleton" style={{ width: '40px', height: '40px', borderRadius: '50%' }} />
+              <div style={{ padding: '1rem 1.25rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <div className="skeleton" style={{ width: '38px', height: '38px', borderRadius: '50%' }} />
                 <div style={{ flex: 1 }}>
                   <div className="skeleton" style={{ width: '120px', height: '14px', marginBottom: '6px' }} />
                   <div className="skeleton" style={{ width: '80px', height: '10px' }} />
                 </div>
               </div>
-              <div className="skeleton" style={{ width: '100%', aspectRatio: '16 / 10', minHeight: '260px' }} />
-              <div style={{ padding: '1rem' }}>
-                <div className="skeleton" style={{ width: '70%', height: '18px', marginBottom: '8px' }} />
+              <div className="skeleton" style={{ width: '100%', aspectRatio: '16 / 9', minHeight: '220px' }} />
+              <div style={{ padding: '1.25rem' }}>
+                <div className="skeleton" style={{ width: '70%', height: '20px', marginBottom: '8px' }} />
                 <div className="skeleton" style={{ width: '90%', height: '12px' }} />
               </div>
             </div>
@@ -441,36 +637,37 @@ export default function HomePage() {
           style={{
             textAlign: 'center',
             padding: '4rem 1.5rem',
-            backgroundColor: 'var(--bg-secondary)',
-            borderRadius: 'var(--radius-md)'
+            backgroundColor: 'var(--bg-surface)',
+            border: '1px solid var(--border-subtle)',
+            borderRadius: 'var(--radius-xl)'
           }}
         >
-          <BookOpen size={36} style={{ color: 'var(--text-muted)', marginBottom: '1rem' }} />
-          <h3 style={{ marginBottom: '0.5rem' }}>No stories found</h3>
-          <p style={{ color: 'var(--text-muted)', maxWidth: '420px', margin: '0 auto 1.5rem', fontSize: '0.9375rem' }}>
-            Try adjusting your theme filters or search query to find more personal experiences.
+          <BookOpen size={42} style={{ color: 'var(--accent-primary)', marginBottom: '1rem' }} />
+          <h3 style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-primary)', marginBottom: '0.5rem' }}>
+            No stories match your filter
+          </h3>
+          <p style={{ color: 'var(--text-secondary)', maxWidth: '420px', margin: '0 auto 1.5rem', fontSize: '0.9375rem' }}>
+            Try resetting your theme filters or search query to explore all community chapters.
           </p>
-          {(selectedType || completedOnly || selectedTag || searchQuery || selectedAuthorId) && (
-            <button
-              onClick={() => {
-                setSelectedType('');
-                setCompletedOnly(false);
-                setSelectedTag('');
-                setSelectedAuthorId('');
-                setSearchQuery('');
-              }}
-              className="btn btn-sm btn-secondary"
-            >
-              Reset All Filters
-            </button>
-          )}
+          <button
+            onClick={() => {
+              setSelectedType('');
+              setCompletedOnly(false);
+              setSelectedTag('');
+              setSelectedAuthorId('');
+              setSearchQuery('');
+            }}
+            className="btn btn-primary"
+          >
+            Reset All Filters
+          </button>
         </div>
       ) : (
-        /* Progressive Stories Stream */
+        /* Stories Magazine Feed */
         <>
           <div
             style={{
-              maxWidth: layoutMode === 'feed' ? '680px' : '100%',
+              maxWidth: layoutMode === 'feed' ? '700px' : '100%',
               margin: '0 auto',
               display: layoutMode === 'feed' ? 'flex' : 'grid',
               flexDirection: 'column',
@@ -496,7 +693,7 @@ export default function HomePage() {
           {isFetchingNextPage && (
             <div
               style={{
-                maxWidth: layoutMode === 'feed' ? '680px' : '100%',
+                maxWidth: layoutMode === 'feed' ? '700px' : '100%',
                 margin: '2rem auto 0',
                 display: 'flex',
                 flexDirection: 'column',
@@ -506,20 +703,20 @@ export default function HomePage() {
               <div
                 className="card"
                 style={{
-                  borderRadius: 'var(--radius-lg)',
+                  borderRadius: 'var(--radius-xl)',
                   overflow: 'hidden',
                   border: '1px solid var(--border-subtle)',
                   backgroundColor: 'var(--bg-card)'
                 }}
               >
-                <div style={{ padding: '0.875rem 1.125rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                  <div className="skeleton" style={{ width: '40px', height: '40px', borderRadius: '50%' }} />
+                <div style={{ padding: '1rem 1.25rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                  <div className="skeleton" style={{ width: '38px', height: '38px', borderRadius: '50%' }} />
                   <div style={{ flex: 1 }}>
                     <div className="skeleton" style={{ width: '120px', height: '14px', marginBottom: '6px' }} />
                     <div className="skeleton" style={{ width: '80px', height: '10px' }} />
                   </div>
                 </div>
-                <div className="skeleton" style={{ width: '100%', aspectRatio: '16 / 10', minHeight: '260px' }} />
+                <div className="skeleton" style={{ width: '100%', aspectRatio: '16 / 9', minHeight: '220px' }} />
               </div>
             </div>
           )}
@@ -527,17 +724,18 @@ export default function HomePage() {
           {/* Sentinel Element for IntersectionObserver */}
           <div ref={sentinelRef} style={{ height: '40px', margin: '1rem 0' }} />
 
-          {/* "You're All Caught Up" Instagram Milestone Check */}
+          {/* "You're All Caught Up" Milestone */}
           {!hasMore && stories.length > 0 && (
             <div
               style={{
                 maxWidth: '460px',
                 margin: '3rem auto 2rem',
                 textAlign: 'center',
-                padding: '2rem 1.5rem',
-                backgroundColor: 'var(--bg-card)',
+                padding: '2.25rem 1.5rem',
+                backgroundColor: 'var(--bg-surface)',
                 border: '1px solid var(--border-subtle)',
-                borderRadius: 'var(--radius-lg)'
+                borderRadius: 'var(--radius-xl)',
+                boxShadow: 'var(--shadow-card)'
               }}
             >
               <div
@@ -560,15 +758,15 @@ export default function HomePage() {
                 style={{
                   fontFamily: 'var(--font-serif)',
                   fontSize: '1.25rem',
-                  fontWeight: 700,
+                  fontWeight: 800,
                   color: 'var(--text-primary)',
                   marginBottom: '0.375rem'
                 }}
               >
                 You're all caught up
               </h3>
-              <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginBottom: '1.25rem' }}>
-                You've seen all recent genuine personal experiences. Check back later for new chapters.
+              <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginBottom: '1.25rem', lineHeight: 1.5 }}>
+                You've explored all recent personal experience chapters. Check back soon for new community releases.
               </p>
               <button onClick={scrollToTop} className="btn btn-sm btn-secondary" style={{ gap: '0.375rem' }}>
                 <ArrowUp size={14} />
@@ -598,7 +796,7 @@ export default function HomePage() {
             alignItems: 'center',
             justifyContent: 'center',
             cursor: 'pointer',
-            boxShadow: '0 4px 14px rgba(79, 70, 229, 0.4)',
+            boxShadow: '0 4px 16px rgba(79, 70, 229, 0.4)',
             zIndex: 90,
             transition: 'transform var(--transition-fast)'
           }}
