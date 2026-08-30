@@ -521,6 +521,131 @@ button, input, textarea, select {
   border-radius: 3px;
 }
 
-::-webkit-scrollbar-thumb:hover {
-  background: var(--text-muted);
+/* Responsive Auth Gateway & Forms */
+.auth-gateway-wrapper {
+  min-height: 85vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem 1.25rem;
 }
+
+.auth-gateway-card {
+  width: 100%;
+  max-width: 1000px;
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+  gap: 2.5rem;
+  background-color: var(--bg-surface);
+  border-radius: var(--radius-xl);
+  border: 1px solid var(--border-subtle);
+  box-shadow: var(--shadow-xl);
+  padding: 2.5rem;
+  align-items: center;
+}
+
+.auth-manifesto-column {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.auth-form-column {
+  background-color: var(--bg-subtle);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-medium);
+  padding: 2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+/* Responsive OTP Input Group */
+.otp-boxes-container {
+  display: flex;
+  justify-content: center;
+  gap: 0.5rem;
+  width: 100%;
+  max-width: 360px;
+  margin: 0 auto;
+}
+
+.otp-box-input {
+  width: clamp(38px, 12vw, 48px);
+  height: clamp(46px, 14vw, 54px);
+  text-align: center;
+  font-size: clamp(1.2rem, 5vw, 1.4rem);
+  font-weight: 700;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-medium);
+  background-color: var(--bg-card);
+  color: var(--text-primary);
+  transition: all var(--transition-fast);
+  outline: none;
+}
+
+.otp-box-input:focus {
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.2);
+}
+
+.otp-box-input.filled {
+  border-color: var(--accent-primary);
+  background-color: var(--accent-subtle);
+}
+
+/* Mobile Responsiveness (< 768px) */
+@media (max-width: 768px) {
+  .auth-gateway-wrapper {
+    padding: 1rem 0.75rem;
+    min-height: calc(100vh - 120px);
+  }
+
+  .auth-gateway-card {
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+    padding: 1.25rem;
+    border-radius: var(--radius-lg);
+  }
+
+  .auth-manifesto-column {
+    display: none; /* Hide long manifesto on small mobile screens to keep login/signup instant and focused */
+  }
+
+  .auth-form-column {
+    padding: 1.25rem;
+    border-radius: var(--radius-md);
+  }
+
+  .modal-content {
+    padding: 1.25rem;
+    max-width: 95vw;
+    border-radius: var(--radius-md);
+  }
+
+  .btn {
+    padding: 0.625rem 1rem;
+    font-size: 0.875rem;
+  }
+
+  .input, .textarea {
+    font-size: 16px; /* Prevents auto-zoom on iOS Safari */
+    padding: 0.75rem;
+  }
+
+  .otp-boxes-container {
+    gap: 0.35rem;
+  }
+}
+
+/* Extra Small Phones (< 400px) */
+@media (max-width: 400px) {
+  .auth-form-column {
+    padding: 1rem 0.75rem;
+  }
+
+  .otp-boxes-container {
+    gap: 0.25rem;
+  }
+}
+

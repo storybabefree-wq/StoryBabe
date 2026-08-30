@@ -1,22 +1,22 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import {
   Lock,
   BookOpen,
   PenSquare,
-  Users,
+  ShieldCheck,
   AlertCircle,
   CheckCircle2,
   Eye,
   EyeOff,
   ArrowRight,
-  ArrowLeft,
-  ShieldCheck
+  ArrowLeft
 } from 'lucide-react';
+import OtpVerifyModal from './OtpVerifyModal';
 
-type GuardView = 'LOGIN' | 'REGISTER' | 'REGISTER_OTP' | 'FORGOT_REQUEST' | 'FORGOT_RESET';
+type GuardView = 'LOGIN' | 'REGISTER' | 'FORGOT_REQUEST' | 'FORGOT_RESET';
 
 export default function AuthGuard({ children }: { children: React.ReactNode }) {
   const {
@@ -44,31 +44,34 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
   const [registerPassword, setRegisterPassword] = useState('');
   const [showRegisterPassword, setShowRegisterPassword] = useState(false);
 
-  // OTP State
-  const [otpDigits, setOtpDigits] = useState(['', '', '', '', '', '']);
-  const [cooldownSeconds, setCooldownSeconds] = useState(0);
-  const [devOtpCode, setDevOtpCode] = useState<string | undefined>(undefined);
-
   // Forgot Password State
   const [forgotEmail, setForgotEmail] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showNewPassword, setShowNewPassword] = useState(false);
 
+  // OTP Popup State
+  const [showOtpModal, setShowOtpModal] = useState(false);
+  const [otpModalType, setOtpModalType] = useState<'REGISTRATION' | 'PASSWORD_RESET'>('REGISTRATION');
+  const [pendingOtpEmail, setPendingOtpEmail] = useState('');
+
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
 
-  const otpInputRefs = useRef<(HTMLInputElement | null)[]>([]);
-
-  // Cooldown countdown timer
+  // Reset all forms and sensitive states on logout or user session change
   useEffect(() => {
-    if (cooldownSeconds <= 0) return;
-    const interval = setInterval(() => {
-      setCooldownSeconds((prev) => (prev > 0 ? prev - 1 : 0));
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [cooldownSeconds]);
+    if (!user) {
+      setLoginPassword('');
+      setRegisterPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+      setShowOtpModal(false);
+      setError('');
+      setSuccessMessage('');
+      setView('LOGIN');
+    }
+  }, [user]);
 
   if (isLoading) {
     return (
@@ -119,13 +122,13 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
     try {
       await login(loginIdentifier.trim(), loginPassword);
     } catch (err: any) {
-      setError(err.message || 'Invalid credentials. Please try again.');
+      setError(err.message || 'Invalid credentials. Please check your username/email and password.');
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  // Handle Register Step 1: Send OTP
+  // Handle Register Step 1: Send OTP & Open Popup Modal
   const handleRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -157,18 +160,16 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
 
     setIsSubmitting(true);
     try {
-      const res = await sendRegisterOtp({
+      await sendRegisterOtp({
         displayName: cleanDisplay,
         username: cleanUser,
         email: cleanEmail,
         password: registerPassword
       });
 
-      setDevOtpCode(res.devOtp);
-      setCooldownSeconds(60);
-      setOtpDigits(['', '', '', '', '', '']);
-      setView('REGISTER_OTP');
-      setSuccessMessage('A 6-digit verification code was sent to your email.');
+      setPendingOtpEmail(cleanEmail);
+      setOtpModalType('REGISTRATION');
+      setShowOtpModal(true);
     } catch (err: any) {
       setError(err.message || 'Failed to dispatch verification code.');
     } finally {
@@ -176,28 +177,38 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // Handle Register Step 2: Verify OTP
-  const handleVerifyOtpSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
-
-    const code = otpDigits.join('').trim();
-    if (code.length !== 6 || !/^\d{6}$/.test(code)) {
-      setError('Please enter the complete 6-digit verification code.');
-      return;
-    }
-
-    setIsSubmitting(true);
-    try {
+  // Handle Verify OTP from Popup Modal
+  const handleVerifyOtp = async (code: string) => {
+    if (otpModalType === 'REGISTRATION') {
       await verifyRegisterOtp({
-        email: email.trim(),
+        email: pendingOtpEmail,
         code
       });
-    } catch (err: any) {
-      setError(err.message || 'Invalid or expired verification code.');
-    } finally {
-      setIsSubmitting(false);
+      // Verification succeeded -> wipe form & modal automatically closes
+      setRegisterPassword('');
+      setShowOtpModal(false);
+    } else {
+      await resetPassword({
+        email: pendingOtpEmail,
+        code,
+        newPassword
+      });
+      setShowOtpModal(false);
+      setSuccessMessage('Password reset successfully. Please sign in with your new password.');
+      setView('LOGIN');
+      setLoginIdentifier(pendingOtpEmail);
+      setLoginPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
     }
+  };
+
+  // Handle Resend OTP from Popup Modal
+  const handleResendOtp = async () => {
+    await resendOtp({
+      email: pendingOtpEmail,
+      type: otpModalType
+    });
   };
 
   // Handle Forgot Password Request
@@ -213,12 +224,10 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
 
     setIsSubmitting(true);
     try {
-      const res = await sendForgotPasswordOtp(cleanEmail);
-      setDevOtpCode(res.devOtp);
-      setCooldownSeconds(60);
-      setOtpDigits(['', '', '', '', '', '']);
+      await sendForgotPasswordOtp(cleanEmail);
+      setPendingOtpEmail(cleanEmail);
       setView('FORGOT_RESET');
-      setSuccessMessage('A 6-digit password reset code was sent to your email.');
+      setSuccessMessage('A password reset verification code was sent to your email.');
     } catch (err: any) {
       setError(err.message || 'Failed to send password reset code.');
     } finally {
@@ -226,16 +235,10 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // Handle Forgot Password Reset
+  // Handle Forgot Password Step 2 -> Open OTP Popup
   const handleForgotResetSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-
-    const code = otpDigits.join('').trim();
-    if (code.length !== 6 || !/^\d{6}$/.test(code)) {
-      setError('Please enter the complete 6-digit reset code.');
-      return;
-    }
 
     if (newPassword.length < 8) {
       setError('New password must be at least 8 characters long.');
@@ -252,105 +255,26 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    setIsSubmitting(true);
-    try {
-      await resetPassword({
-        email: forgotEmail.trim(),
-        code,
-        newPassword
-      });
-
-      setSuccessMessage('Password reset successfully. You can now sign in.');
-      setView('LOGIN');
-      setLoginIdentifier(forgotEmail.trim());
-      setLoginPassword('');
-    } catch (err: any) {
-      setError(err.message || 'Failed to reset password.');
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  // Resend OTP
-  const handleResendOtp = async (type: 'REGISTRATION' | 'PASSWORD_RESET') => {
-    if (cooldownSeconds > 0 || isSubmitting) return;
-    setError('');
-    setIsSubmitting(true);
-
-    try {
-      const targetEmail = type === 'REGISTRATION' ? email : forgotEmail;
-      const res = await resendOtp({
-        email: targetEmail.trim(),
-        type
-      });
-
-      setDevOtpCode(res.devOtp);
-      setCooldownSeconds(60);
-      setSuccessMessage('A fresh verification code has been dispatched.');
-    } catch (err: any) {
-      setError(err.message || 'Failed to resend verification code.');
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  // 6-box OTP input helper
-  const handleOtpDigitChange = (index: number, value: string) => {
-    if (value.length > 1) {
-      const cleanDigits = value.replace(/\D/g, '').slice(0, 6).split('');
-      const updated = [...otpDigits];
-      cleanDigits.forEach((d, i) => {
-        if (i < 6) updated[i] = d;
-      });
-      setOtpDigits(updated);
-      const nextIndex = Math.min(cleanDigits.length, 5);
-      otpInputRefs.current[nextIndex]?.focus();
-      return;
-    }
-
-    const singleDigit = value.replace(/\D/g, '');
-    const updated = [...otpDigits];
-    updated[index] = singleDigit;
-    setOtpDigits(updated);
-
-    if (singleDigit && index < 5) {
-      otpInputRefs.current[index + 1]?.focus();
-    }
-  };
-
-  const handleOtpKeyDown = (index: number, e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Backspace' && !otpDigits[index] && index > 0) {
-      otpInputRefs.current[index - 1]?.focus();
-    }
+    setOtpModalType('PASSWORD_RESET');
+    setShowOtpModal(true);
   };
 
   return (
-    <div
-      style={{
-        minHeight: '85vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '2rem 1.25rem'
-      }}
-    >
-      <div
-        style={{
-          width: '100%',
-          maxWidth: '1000px',
-          display: 'grid',
-          gridTemplateColumns: 'minmax(0, 1.1fr) minmax(0, 1fr)',
-          gap: '2.5rem',
-          backgroundColor: 'var(--bg-surface)',
-          borderRadius: 'var(--radius-xl)',
-          border: '1px solid var(--border-subtle)',
-          boxShadow: 'var(--shadow-xl)',
-          padding: '2.5rem',
-          alignItems: 'center'
-        }}
-      >
-        {/* Left: Product Manifesto */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+    <div className="auth-gateway-wrapper">
+      {/* Dedicated OTP Verification Popup Modal */}
+      {showOtpModal && (
+        <OtpVerifyModal
+          email={pendingOtpEmail}
+          type={otpModalType}
+          onVerify={handleVerifyOtp}
+          onResend={handleResendOtp}
+          onClose={() => setShowOtpModal(false)}
+        />
+      )}
+
+      <div className="auth-gateway-card">
+        {/* Left: Product Manifesto (Visible on Desktop/Tablet, clean hidden on small mobile) */}
+        <div className="auth-manifesto-column">
           <div>
             <span
               style={{
@@ -465,17 +389,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
         </div>
 
         {/* Right: Auth Card */}
-        <div
-          style={{
-            backgroundColor: 'var(--bg-subtle)',
-            borderRadius: 'var(--radius-lg)',
-            border: '1px solid var(--border-medium)',
-            padding: '2rem',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '1.25rem'
-          }}
-        >
+        <div className="auth-form-column">
           {/* Tab Navigation */}
           {view === 'LOGIN' || view === 'REGISTER' ? (
             <div
@@ -495,7 +409,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
                 }}
                 style={{
                   flex: 1,
-                  padding: '0.5rem',
+                  padding: '0.625rem',
                   borderRadius: 'var(--radius-md)',
                   border: 'none',
                   backgroundColor: view === 'LOGIN' ? 'var(--accent-primary)' : 'transparent',
@@ -517,7 +431,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
                 }}
                 style={{
                   flex: 1,
-                  padding: '0.5rem',
+                  padding: '0.625rem',
                   borderRadius: 'var(--radius-md)',
                   border: 'none',
                   backgroundColor: view === 'REGISTER' ? 'var(--accent-primary)' : 'transparent',
@@ -536,8 +450,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
               <button
                 type="button"
                 onClick={() => {
-                  if (view === 'REGISTER_OTP') setView('REGISTER');
-                  else setView('LOGIN');
+                  setView('LOGIN');
                   setError('');
                   setSuccessMessage('');
                 }}
@@ -548,7 +461,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
                 <span>Back</span>
               </button>
               <span style={{ fontSize: '0.9375rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                {view === 'REGISTER_OTP' ? 'Email Verification' : view === 'FORGOT_REQUEST' ? 'Reset Password' : 'Enter Reset Code'}
+                {view === 'FORGOT_REQUEST' ? 'Reset Password' : 'Enter New Password'}
               </span>
             </div>
           )}
@@ -593,32 +506,6 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
             </div>
           )}
 
-          {/* Dev Helper */}
-          {devOtpCode && (view === 'REGISTER_OTP' || view === 'FORGOT_RESET') && (
-            <div
-              style={{
-                padding: '0.5rem 0.75rem',
-                backgroundColor: 'rgba(59, 130, 246, 0.1)',
-                border: '1px dashed rgba(59, 130, 246, 0.3)',
-                borderRadius: 'var(--radius-sm)',
-                color: '#93c5fd',
-                fontSize: '0.8125rem',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between'
-              }}
-            >
-              <span>Testing Code: <strong>{devOtpCode}</strong></span>
-              <button
-                type="button"
-                onClick={() => setOtpDigits(devOtpCode.split(''))}
-                style={{ background: 'none', border: 'none', color: '#60a5fa', cursor: 'pointer', fontSize: '0.75rem', textDecoration: 'underline' }}
-              >
-                Fill Code
-              </button>
-            </div>
-          )}
-
           {/* VIEW 1: SIGN IN */}
           {view === 'LOGIN' && (
             <form onSubmit={handleLoginSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
@@ -631,7 +518,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
                   required
                   value={loginIdentifier}
                   onChange={(e) => setLoginIdentifier(e.target.value)}
-                  placeholder="Enter your username or email"
+                  placeholder="Enter username or email"
                   className="input"
                   autoComplete="username"
                 />
@@ -661,7 +548,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
                     required
                     value={loginPassword}
                     onChange={(e) => setLoginPassword(e.target.value)}
-                    placeholder="Enter your password"
+                    placeholder="Enter password"
                     className="input"
                     style={{ paddingRight: '2.5rem' }}
                     autoComplete="current-password"
@@ -793,75 +680,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
             </form>
           )}
 
-          {/* VIEW 3: REGISTER OTP VERIFICATION */}
-          {view === 'REGISTER_OTP' && (
-            <form onSubmit={handleVerifyOtpSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-              <div style={{ textAlign: 'center', color: 'var(--text-secondary)', fontSize: '0.875rem', lineHeight: '1.5' }}>
-                We sent a 6-digit verification code to <br />
-                <strong style={{ color: 'var(--text-primary)' }}>{email}</strong>
-              </div>
-
-              {/* 6 Digit Input Boxes */}
-              <div style={{ display: 'flex', justifyContent: 'center', gap: '0.5rem' }}>
-                {otpDigits.map((digit, idx) => (
-                  <input
-                    key={idx}
-                    ref={(el) => {
-                      otpInputRefs.current[idx] = el;
-                    }}
-                    type="text"
-                    inputMode="numeric"
-                    maxLength={6}
-                    value={digit}
-                    onChange={(e) => handleOtpDigitChange(idx, e.target.value)}
-                    onKeyDown={(e) => handleOtpKeyDown(idx, e)}
-                    style={{
-                      width: '46px',
-                      height: '52px',
-                      textAlign: 'center',
-                      fontSize: '1.375rem',
-                      fontWeight: 700,
-                      borderRadius: 'var(--radius-md)',
-                      border: digit ? '2px solid var(--accent-primary)' : '1px solid var(--border-medium)',
-                      backgroundColor: 'var(--bg-subtle)',
-                      color: 'var(--text-primary)'
-                    }}
-                    autoFocus={idx === 0}
-                  />
-                ))}
-              </div>
-
-              <button
-                type="submit"
-                className="btn btn-primary"
-                style={{ width: '100%', justifyContent: 'center', padding: '0.875rem', fontWeight: 700 }}
-                disabled={isSubmitting || otpDigits.join('').length !== 6}
-              >
-                <span>{isSubmitting ? 'Verifying...' : 'Verify & Enter StoryBabe'}</span>
-                <ArrowRight size={16} />
-              </button>
-
-              <div style={{ textAlign: 'center', fontSize: '0.8125rem', color: 'var(--text-muted)' }}>
-                Didn't receive code?{' '}
-                <button
-                  type="button"
-                  onClick={() => handleResendOtp('REGISTRATION')}
-                  disabled={cooldownSeconds > 0 || isSubmitting}
-                  style={{
-                    background: 'none',
-                    border: 'none',
-                    color: cooldownSeconds > 0 ? 'var(--text-muted)' : 'var(--accent-primary)',
-                    fontWeight: 600,
-                    cursor: cooldownSeconds > 0 ? 'not-allowed' : 'pointer'
-                  }}
-                >
-                  {cooldownSeconds > 0 ? `Resend code in ${cooldownSeconds}s` : 'Resend code'}
-                </button>
-              </div>
-            </form>
-          )}
-
-          {/* VIEW 4: FORGOT PASSWORD REQUEST */}
+          {/* VIEW 3: FORGOT PASSWORD REQUEST */}
           {view === 'FORGOT_REQUEST' && (
             <form onSubmit={handleForgotRequestSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
               <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', lineHeight: '1.5', margin: 0 }}>
@@ -895,44 +714,9 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
             </form>
           )}
 
-          {/* VIEW 5: FORGOT PASSWORD RESET */}
+          {/* VIEW 4: FORGOT PASSWORD NEW PASSWORD ENTRY */}
           {view === 'FORGOT_RESET' && (
             <form onSubmit={handleForgotResetSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '0.875rem' }}>
-              <div style={{ textAlign: 'center', color: 'var(--text-secondary)', fontSize: '0.875rem', lineHeight: '1.5', marginBottom: '0.5rem' }}>
-                Enter the reset code sent to <br />
-                <strong style={{ color: 'var(--text-primary)' }}>{forgotEmail}</strong>
-              </div>
-
-              {/* 6 Digit Input Boxes */}
-              <div style={{ display: 'flex', justifyContent: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
-                {otpDigits.map((digit, idx) => (
-                  <input
-                    key={idx}
-                    ref={(el) => {
-                      otpInputRefs.current[idx] = el;
-                    }}
-                    type="text"
-                    inputMode="numeric"
-                    maxLength={6}
-                    value={digit}
-                    onChange={(e) => handleOtpDigitChange(idx, e.target.value)}
-                    onKeyDown={(e) => handleOtpKeyDown(idx, e)}
-                    style={{
-                      width: '46px',
-                      height: '50px',
-                      textAlign: 'center',
-                      fontSize: '1.25rem',
-                      fontWeight: 700,
-                      borderRadius: 'var(--radius-md)',
-                      border: digit ? '2px solid var(--accent-primary)' : '1px solid var(--border-medium)',
-                      backgroundColor: 'var(--bg-subtle)',
-                      color: 'var(--text-primary)'
-                    }}
-                    autoFocus={idx === 0}
-                  />
-                ))}
-              </div>
-
               <div>
                 <label style={{ display: 'block', fontSize: '0.8125rem', fontWeight: 700, marginBottom: '0.25rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
                   New Password (Min 8 chars, letter & number)
@@ -986,29 +770,10 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
                 type="submit"
                 className="btn btn-primary"
                 style={{ width: '100%', justifyContent: 'center', padding: '0.875rem', fontWeight: 700, marginTop: '0.5rem' }}
-                disabled={isSubmitting || otpDigits.join('').length !== 6}
               >
-                <span>{isSubmitting ? 'Resetting Password...' : 'Save New Password & Sign In'}</span>
+                <span>Enter Verification Code</span>
                 <ArrowRight size={16} />
               </button>
-
-              <div style={{ textAlign: 'center', fontSize: '0.8125rem', color: 'var(--text-muted)' }}>
-                Didn't receive code?{' '}
-                <button
-                  type="button"
-                  onClick={() => handleResendOtp('PASSWORD_RESET')}
-                  disabled={cooldownSeconds > 0 || isSubmitting}
-                  style={{
-                    background: 'none',
-                    border: 'none',
-                    color: cooldownSeconds > 0 ? 'var(--text-muted)' : 'var(--accent-primary)',
-                    fontWeight: 600,
-                    cursor: cooldownSeconds > 0 ? 'not-allowed' : 'pointer'
-                  }}
-                >
-                  {cooldownSeconds > 0 ? `Resend code in ${cooldownSeconds}s` : 'Resend code'}
-                </button>
-              </div>
             </form>
           )}
         </div>
