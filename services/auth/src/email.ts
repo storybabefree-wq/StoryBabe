@@ -1,6 +1,8 @@
 /**
  * StoryBabe Transactional Email Service
- * Production SMTP with Connection Pooling & Fast Dispatch
+ * Production Dual-Engine:
+ * 1. Gmail SMTP (Port 587 STARTTLS / Port 465 SSL)
+ * 2. Resend HTTPS REST API (Port 443 - Cloud Firewall Proof)
  */
 
 // @ts-ignore
@@ -11,32 +13,6 @@ interface SendOtpOptions {
   code: string;
   type: 'REGISTRATION' | 'PASSWORD_RESET';
   displayName?: string;
-}
-
-// Cached SMTP transporter singleton
-let cachedTransporter: any = null;
-
-function getTransporter(user: string, pass: string) {
-  if (cachedTransporter) return cachedTransporter;
-
-  cachedTransporter = nodemailer.createTransport({
-    service: 'gmail',
-    host: 'smtp.gmail.com',
-    port: 465,
-    secure: true,
-    auth: {
-      user,
-      pass
-    },
-    pool: true,
-    maxConnections: 5,
-    maxMessages: 100,
-    connectionTimeout: 10000,
-    greetingTimeout: 10000,
-    socketTimeout: 15000
-  });
-
-  return cachedTransporter;
 }
 
 export async function sendOtpEmail(options: SendOtpOptions): Promise<{ success: boolean; isDevFallback?: boolean; error?: string }> {
@@ -144,13 +120,31 @@ export async function sendOtpEmail(options: SendOtpOptions): Promise<{ success: 
 </html>
   `.trim();
 
-  // 1. Primary: Gmail SMTP / Custom SMTP (100% Free - Sends to ANY recipient)
   const smtpUser = (process.env.SMTP_USER || process.env.GMAIL_USER || '').trim().toLowerCase();
   const smtpPass = (process.env.SMTP_PASS || process.env.GMAIL_APP_PASSWORD || '').replace(/[^a-zA-Z0-9]/g, '');
+  const resendApiKey = (process.env.RESEND_API_KEY || '').trim();
+  const resendFromEmail = (process.env.RESEND_FROM_EMAIL || 'StoryBabe <onboarding@resend.dev>').trim();
 
+  let lastError = '';
+
+  // 1. Attempt Option A: Gmail SMTP (Standard Port 587 STARTTLS for Cloud VMs)
   if (smtpUser && smtpPass) {
     try {
-      const transporter = getTransporter(smtpUser, smtpPass);
+      const transporter = nodemailer.createTransport({
+        host: 'smtp.gmail.com',
+        port: 587,
+        secure: false, // Port 587 uses STARTTLS
+        auth: {
+          user: smtpUser,
+          pass: smtpPass
+        },
+        tls: {
+          rejectUnauthorized: false
+        },
+        connectionTimeout: 5000,
+        greetingTimeout: 5000,
+        socketTimeout: 8000
+      });
 
       const info = await transporter.sendMail({
         from: `StoryBabe <${smtpUser}>`,
@@ -159,55 +153,58 @@ export async function sendOtpEmail(options: SendOtpOptions): Promise<{ success: 
         html: htmlContent
       });
 
-      console.log(`[Gmail SMTP] OTP email sent successfully to ${to} (${type}) - MessageId: ${info.messageId}`);
+      console.log(`[Gmail SMTP 587] OTP email sent successfully to ${to} (${type}) - MessageId: ${info.messageId}`);
       return { success: true };
     } catch (err: any) {
-      console.error('[Gmail SMTP Delivery Error]:', err.message);
-      // Reset transporter cache on failure so next attempt rebuilds connection
-      cachedTransporter = null;
+      console.warn(`[Gmail SMTP 587 warning]: ${err.message}. Trying port 465...`);
+      lastError = err.message;
 
-      // Try non-pooled fallback on port 587
+      // Try Port 465 SSL fallback
       try {
-        const fallbackTransporter = nodemailer.createTransport({
+        const sslTransporter = nodemailer.createTransport({
           host: 'smtp.gmail.com',
-          port: 587,
-          secure: false,
-          auth: { user: smtpUser, pass: smtpPass }
+          port: 465,
+          secure: true,
+          auth: {
+            user: smtpUser,
+            pass: smtpPass
+          },
+          tls: {
+            rejectUnauthorized: false
+          },
+          connectionTimeout: 4000,
+          greetingTimeout: 4000,
+          socketTimeout: 6000
         });
-        const info = await fallbackTransporter.sendMail({
+
+        const sslInfo = await sslTransporter.sendMail({
           from: `StoryBabe <${smtpUser}>`,
           to,
           subject,
           html: htmlContent
         });
-        console.log(`[Gmail SMTP Fallback] OTP email sent to ${to} (${type}) - MessageId: ${info.messageId}`);
+
+        console.log(`[Gmail SMTP 465] OTP email sent successfully to ${to} (${type}) - MessageId: ${sslInfo.messageId}`);
         return { success: true };
-      } catch (fallbackErr: any) {
-        console.error('[Gmail SMTP Fallback Error]:', fallbackErr.message);
-        if (process.env.NODE_ENV === 'production') {
-          return {
-            success: false,
-            error: `Failed to deliver email via Gmail SMTP: ${err.message}. Please verify your Google App Password in Render.`
-          };
-        }
+      } catch (sslErr: any) {
+        console.error('[Gmail SMTP 465 error]:', sslErr.message);
+        lastError = `Gmail SMTP error: ${sslErr.message}`;
       }
     }
   }
 
-  // 2. Secondary: Resend API (when RESEND_API_KEY is configured)
-  const apiKey = (process.env.RESEND_API_KEY || '').trim();
-  const fromEmail = (process.env.RESEND_FROM_EMAIL || 'StoryBabe <onboarding@resend.dev>').trim();
-
-  if (apiKey) {
+  // 2. Attempt Option B: Resend HTTPS REST API (Port 443 - 100% Cloud Firewall Proof)
+  if (resendApiKey) {
     try {
+      console.log(`[Resend HTTPS Fallback] Dispatching OTP email via HTTPS to ${to}...`);
       const response = await fetch('https://api.resend.com/emails', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${apiKey}`,
+          'Authorization': `Bearer ${resendApiKey}`,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          from: fromEmail,
+          from: resendFromEmail,
           to: [to],
           subject,
           html: htmlContent
@@ -219,32 +216,22 @@ export async function sendOtpEmail(options: SendOtpOptions): Promise<{ success: 
       if (!response.ok) {
         console.error('[Resend API Error]:', data);
         const errMsg = data.message || data.error?.message || 'Resend API rejected the email.';
-        if (process.env.NODE_ENV === 'production') {
-          return {
-            success: false,
-            error: `Resend email delivery failed: ${errMsg}`
-          };
-        }
+        lastError = `Resend delivery failed: ${errMsg}`;
       } else {
-        console.log(`[Resend] OTP email sent successfully to ${to} (${type}) - ID: ${data.id}`);
+        console.log(`[Resend HTTPS] OTP email delivered to ${to} (${type}) - ID: ${data.id}`);
         return { success: true };
       }
     } catch (err: any) {
-      console.error('[Email Dispatch Error]:', err.message);
-      if (process.env.NODE_ENV === 'production') {
-        return {
-          success: false,
-          error: `Email delivery connection error: ${err.message}`
-        };
-      }
+      console.error('[Resend Dispatch Error]:', err.message);
+      lastError = `Resend HTTPS error: ${err.message}`;
     }
   }
 
-  // 3. Fallback for Local Development (when no credentials exist)
+  // 3. Fallback / Final Production Response
   if (process.env.NODE_ENV === 'production') {
     return {
       success: false,
-      error: 'No email service configured on server. Please set SMTP_USER and SMTP_PASS (Google App Password) in Render environment variables.'
+      error: lastError || 'Email delivery failed. Please verify your email credentials in Render.'
     };
   }
 
