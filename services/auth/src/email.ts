@@ -1,8 +1,9 @@
 /**
  * StoryBabe Transactional Email Service
- * Production Cloud Architecture:
- * 1. Resend HTTPS REST API (Port 443 - 100% Cloud Firewall Proof, Sub-second delivery on Render)
- * 2. Gmail SMTP (For environments where outbound SMTP ports are unblocked)
+ * Production Triple-Engine:
+ * 1. Google Apps Script HTTPS Webhook Relay (100% Free, Sends from your Gmail to ANY recipient worldwide via Port 443)
+ * 2. Resend HTTPS REST API (Port 443)
+ * 3. Gmail SMTP (Port 587 STARTTLS)
  */
 
 // @ts-ignore
@@ -120,6 +121,7 @@ export async function sendOtpEmail(options: SendOtpOptions): Promise<{ success: 
 </html>
   `.trim();
 
+  const gmailWebhookUrl = (process.env.GMAIL_WEBHOOK_URL || process.env.GMAIL_RELAY_URL || '').trim();
   const resendApiKey = (process.env.RESEND_API_KEY || '').trim();
   const resendFromEmail = (process.env.RESEND_FROM_EMAIL || 'StoryBabe <onboarding@resend.dev>').trim();
   const smtpUser = (process.env.SMTP_USER || process.env.GMAIL_USER || '').trim().toLowerCase();
@@ -127,7 +129,45 @@ export async function sendOtpEmail(options: SendOtpOptions): Promise<{ success: 
 
   let lastError = '';
 
-  // 1. Primary for Cloud / Render: Resend HTTPS REST API (Port 443 - Never Blocked by Cloud Firewalls)
+  // 1. Primary for Cloud / Render: Google Apps Script HTTPS Webhook Relay (Sends to ANY recipient worldwide via Port 443)
+  if (gmailWebhookUrl) {
+    try {
+      console.log(`[Gmail HTTPS Relay] Dispatching OTP email via Google HTTPS Webhook to ${to}...`);
+      const response = await fetch(gmailWebhookUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'text/plain;charset=utf-8'
+        },
+        body: JSON.stringify({
+          to,
+          subject,
+          html: htmlContent
+        }),
+        redirect: 'follow'
+      });
+
+      const responseText = await response.text();
+      let resJson: any = {};
+      try {
+        resJson = JSON.parse(responseText);
+      } catch {
+        resJson = { success: response.ok };
+      }
+
+      if (resJson.success || response.ok) {
+        console.log(`[Gmail HTTPS Relay] OTP email successfully delivered to ${to} (${type})`);
+        return { success: true };
+      } else {
+        console.error('[Gmail HTTPS Relay Error]:', resJson.error || responseText);
+        lastError = `Gmail Relay Error: ${resJson.error || 'Failed to dispatch email'}`;
+      }
+    } catch (err: any) {
+      console.error('[Gmail HTTPS Relay Exception]:', err.message);
+      lastError = `Gmail Relay network error: ${err.message}`;
+    }
+  }
+
+  // 2. Secondary: Resend HTTPS REST API (Port 443)
   if (resendApiKey) {
     try {
       console.log(`[Resend HTTPS] Dispatching OTP email via Port 443 to ${to}...`);
@@ -161,7 +201,7 @@ export async function sendOtpEmail(options: SendOtpOptions): Promise<{ success: 
     }
   }
 
-  // 2. Secondary: Gmail SMTP (For unblocked environments)
+  // 3. Tertiary: Gmail SMTP (For unblocked environments)
   if (smtpUser && smtpPass) {
     try {
       const transporter = nodemailer.createTransport({
@@ -191,15 +231,15 @@ export async function sendOtpEmail(options: SendOtpOptions): Promise<{ success: 
       return { success: true };
     } catch (err: any) {
       console.warn(`[Gmail SMTP 587 error]: ${err.message}`);
-      lastError = `Gmail SMTP error: ${err.message}. (Note: Cloud hosts like Render block raw SMTP ports; please configure RESEND_API_KEY in Render).`;
+      lastError = `Gmail SMTP error: ${err.message}`;
     }
   }
 
-  // 3. Final Production Response
+  // 4. Final Production Response
   if (process.env.NODE_ENV === 'production') {
     return {
       success: false,
-      error: lastError || 'Email service not configured. Please set RESEND_API_KEY in Render environment variables.'
+      error: lastError || 'Email service not configured. Please set GMAIL_WEBHOOK_URL or RESEND_API_KEY in Render.'
     };
   }
 
