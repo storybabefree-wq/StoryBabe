@@ -122,7 +122,7 @@ app.post('/register/send-otp', async (req: any, res: any): Promise<void> => {
       data: {
         email: lowerEmail,
         expiresInSeconds: 600,
-        devOtp: isDev || emailResult.isDevFallback ? code : undefined,
+        devOtp: isDev && !process.env.RESEND_API_KEY ? code : undefined,
         message: 'A 6-digit verification code has been sent to your email.'
       }
     });
@@ -334,7 +334,7 @@ app.post('/forgot-password/send-otp', async (req: any, res: any): Promise<void> 
       data: {
         email: lowerEmail,
         expiresInSeconds: 600,
-        devOtp: isDev || emailResult.isDevFallback ? code : undefined,
+        devOtp: isDev && !process.env.RESEND_API_KEY ? code : undefined,
         message: 'A password reset code has been sent to your email.'
       }
     });
@@ -514,7 +514,7 @@ app.post('/resend-otp', async (req: any, res: any): Promise<void> => {
       data: {
         email: lowerEmail,
         expiresInSeconds: 600,
-        devOtp: isDev || emailResult.isDevFallback ? code : undefined,
+        devOtp: isDev && !process.env.RESEND_API_KEY ? code : undefined,
         message: 'A new verification code has been sent to your email.'
       }
     });
