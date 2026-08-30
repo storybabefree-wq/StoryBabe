@@ -1,7 +1,13 @@
 /**
  * StoryBabe Transactional Email Service
- * Uses Resend API for production email delivery with automatic development console fallback.
+ * Supports:
+ * 1. Gmail SMTP (100% Free with Google App Password - no custom domain needed)
+ * 2. Resend API (via RESEND_API_KEY)
+ * 3. Automatic development console fallback
  */
+
+// @ts-ignore
+import nodemailer from 'nodemailer';
 
 interface SendOtpOptions {
   to: string;
@@ -12,8 +18,6 @@ interface SendOtpOptions {
 
 export async function sendOtpEmail(options: SendOtpOptions): Promise<{ success: boolean; isDevFallback?: boolean; error?: string }> {
   const { to, code, type, displayName = 'StoryBabe Author' } = options;
-  const apiKey = process.env.RESEND_API_KEY;
-  const fromEmail = process.env.RESEND_FROM_EMAIL || 'StoryBabe <security@storybabe.internal>';
 
   const isRegistration = type === 'REGISTRATION';
   const subject = isRegistration
@@ -117,7 +121,38 @@ export async function sendOtpEmail(options: SendOtpOptions): Promise<{ success: 
 </html>
   `.trim();
 
-  // If Resend API Key is available, dispatch via HTTPS
+  // Option A: Gmail SMTP / Custom SMTP (Free with Gmail App Password - Sends to ANY email recipient!)
+  const smtpUser = process.env.SMTP_USER || process.env.GMAIL_USER;
+  const smtpPass = process.env.SMTP_PASS || process.env.GMAIL_APP_PASSWORD;
+
+  if (smtpUser && smtpPass) {
+    try {
+      const transporter = nodemailer.createTransport({
+        service: 'gmail',
+        auth: {
+          user: smtpUser,
+          pass: smtpPass.replace(/\s+/g, '') // remove spaces from 16-letter app password
+        }
+      });
+
+      await transporter.sendMail({
+        from: `StoryBabe <${smtpUser}>`,
+        to,
+        subject,
+        html: htmlContent
+      });
+
+      console.log(`[Gmail SMTP] OTP email sent successfully to ${to} (${type})`);
+      return { success: true };
+    } catch (err: any) {
+      console.error('[Gmail SMTP Error]:', err.message);
+    }
+  }
+
+  // Option B: Resend API (when RESEND_API_KEY is configured)
+  const apiKey = process.env.RESEND_API_KEY;
+  const fromEmail = process.env.RESEND_FROM_EMAIL || 'StoryBabe <onboarding@resend.dev>';
+
   if (apiKey) {
     try {
       const response = await fetch('https://api.resend.com/emails', {
@@ -137,7 +172,6 @@ export async function sendOtpEmail(options: SendOtpOptions): Promise<{ success: 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
         console.error('[Resend API Error]:', errorData);
-        // Fallback to console output for developer ease
         console.log(`\n========================================\n[AUTH DEV OTP] Email to: ${to}\n[AUTH DEV OTP] Action: ${type}\n[AUTH DEV OTP] Code: ${code}\n========================================\n`);
         return { success: true, isDevFallback: true };
       }
@@ -151,7 +185,7 @@ export async function sendOtpEmail(options: SendOtpOptions): Promise<{ success: 
     }
   }
 
-  // Development / Local Testing Mode: Print clearly to server console
+  // Option C: Local Testing Fallback
   console.log(`\n========================================\n[AUTH DEV OTP] Email to: ${to}\n[AUTH DEV OTP] Action: ${type}\n[AUTH DEV OTP] Code: ${code}\n========================================\n`);
   return { success: true, isDevFallback: true };
 }
