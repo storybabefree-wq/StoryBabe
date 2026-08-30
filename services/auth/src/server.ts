@@ -63,12 +63,15 @@ app.post('/register/send-otp', async (req: any, res: any): Promise<void> => {
     const lowerEmail = email.toLowerCase().trim();
     const lowerUsername = username.toLowerCase().trim();
 
-    // Check unique email and username
-    const existingEmail = await prisma.user.findUnique({ where: { email: lowerEmail } });
-    if (existingEmail) {
+    // Check 5 accounts limit per email
+    const emailAccountsCount = await prisma.user.count({ where: { email: lowerEmail } });
+    if (emailAccountsCount >= 5) {
       res.status(409).json({
         success: false,
-        error: { code: 'EMAIL_EXISTS', message: 'An account with this email already exists.' }
+        error: {
+          code: 'MAX_ACCOUNTS_EXCEEDED',
+          message: 'Maximum limit of 5 accounts per email address reached. Multiple accounts with the same email limit exceeded.'
+        }
       });
       return;
     }
@@ -212,17 +215,27 @@ app.post('/register/verify-otp', async (req: any, res: any): Promise<void> => {
       return;
     }
 
-    // Check if email or username got registered in the meantime
-    const existing = await prisma.user.findFirst({
-      where: {
-        OR: [{ email: lowerEmail }, { username: signupData.username }]
-      }
+    // Check if username was taken in the meantime
+    const existingUsername = await prisma.user.findUnique({
+      where: { username: signupData.username }
     });
-
-    if (existing) {
+    if (existingUsername) {
       res.status(409).json({
         success: false,
-        error: { code: 'ACCOUNT_EXISTS', message: 'An account with this email or username already exists.' }
+        error: { code: 'USERNAME_TAKEN', message: 'This username is already taken. Please choose another.' }
+      });
+      return;
+    }
+
+    // Check 5 accounts limit per email
+    const emailAccountsCount = await prisma.user.count({ where: { email: lowerEmail } });
+    if (emailAccountsCount >= 5) {
+      res.status(409).json({
+        success: false,
+        error: {
+          code: 'MAX_ACCOUNTS_EXCEEDED',
+          message: 'Maximum limit of 5 accounts per email address reached. Multiple accounts with the same email limit exceeded.'
+        }
       });
       return;
     }
@@ -547,11 +560,14 @@ app.post('/register', async (req: any, res: any): Promise<void> => {
     const lowerEmail = email.toLowerCase().trim();
     const lowerUsername = username.toLowerCase().trim();
 
-    const existingEmail = await prisma.user.findUnique({ where: { email: lowerEmail } });
-    if (existingEmail) {
+    const emailAccountsCount = await prisma.user.count({ where: { email: lowerEmail } });
+    if (emailAccountsCount >= 5) {
       res.status(409).json({
         success: false,
-        error: { code: 'EMAIL_EXISTS', message: 'An account with this email already exists.' }
+        error: {
+          code: 'MAX_ACCOUNTS_EXCEEDED',
+          message: 'Maximum limit of 5 accounts per email address reached. Multiple accounts with the same email limit exceeded.'
+        }
       });
       return;
     }
@@ -560,7 +576,7 @@ app.post('/register', async (req: any, res: any): Promise<void> => {
     if (existingUsername) {
       res.status(409).json({
         success: false,
-        error: { code: 'USERNAME_TAKEN', message: 'This username is already taken.' }
+        error: { code: 'USERNAME_TAKEN', message: 'This username is already taken. Please choose another.' }
       });
       return;
     }
@@ -622,22 +638,32 @@ app.post('/login', async (req: any, res: any): Promise<void> => {
     const { emailOrUsername, password } = parseResult.data;
     const lowerInput = emailOrUsername.toLowerCase().trim();
 
-    const user = await prisma.user.findFirst({
-      where: {
-        OR: [{ email: lowerInput }, { username: lowerInput }]
-      }
-    });
+    let user: any = null;
 
-    if (!user) {
-      res.status(401).json({
-        success: false,
-        error: { code: 'INVALID_CREDENTIALS', message: 'Invalid email/username or password.' }
-      });
-      return;
+    if (lowerInput.includes('@')) {
+      // Find matching account among all accounts with this email
+      const accounts = await prisma.user.findMany({ where: { email: lowerInput } });
+      if (accounts && accounts.length > 0) {
+        for (const acc of accounts) {
+          const isMatch = await comparePassword(password, acc.passwordHash);
+          if (isMatch) {
+            user = acc;
+            break;
+          }
+        }
+      }
+    } else {
+      // Find account by unique username
+      const acc = await prisma.user.findUnique({ where: { username: lowerInput } });
+      if (acc) {
+        const isMatch = await comparePassword(password, acc.passwordHash);
+        if (isMatch) {
+          user = acc;
+        }
+      }
     }
 
-    const isValidPassword = await comparePassword(password, user.passwordHash);
-    if (!isValidPassword) {
+    if (!user) {
       res.status(401).json({
         success: false,
         error: { code: 'INVALID_CREDENTIALS', message: 'Invalid email/username or password.' }

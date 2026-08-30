@@ -63,7 +63,7 @@ try {
   db.exec(`
     CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY,
-      email TEXT UNIQUE NOT NULL,
+      email TEXT NOT NULL,
       username TEXT UNIQUE NOT NULL,
       displayName TEXT NOT NULL,
       passwordHash TEXT NOT NULL,
@@ -302,6 +302,33 @@ try {
   }
   if (!userCols.has('emailVerifiedAt')) {
     db.exec('ALTER TABLE users ADD COLUMN emailVerifiedAt TEXT');
+  }
+
+  // Migrate existing users table to remove UNIQUE constraint on email if present
+  const masterSql = (db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='users'").get() as any)?.sql || '';
+  if (masterSql.includes('email TEXT UNIQUE NOT NULL') || masterSql.includes('email TEXT NOT NULL UNIQUE')) {
+    db.exec(`
+      CREATE TABLE users_new (
+        id TEXT PRIMARY KEY,
+        email TEXT NOT NULL,
+        username TEXT UNIQUE NOT NULL,
+        displayName TEXT NOT NULL,
+        passwordHash TEXT NOT NULL,
+        bio TEXT,
+        avatarUrl TEXT,
+        role TEXT DEFAULT 'AUTHOR',
+        lastUsernameChangeAt TEXT,
+        usernameChangesCount INTEGER DEFAULT 0,
+        emailVerified INTEGER DEFAULT 0,
+        emailVerifiedAt TEXT,
+        createdAt TEXT NOT NULL,
+        updatedAt TEXT NOT NULL
+      );
+      INSERT OR IGNORE INTO users_new SELECT * FROM users;
+      DROP TABLE users;
+      ALTER TABLE users_new RENAME TO users;
+      CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+    `);
   }
 } catch (e) {
   // Migration already handled
@@ -711,20 +738,39 @@ export const prisma = {
       };
     },
 
-    findFirst: async ({ where }: { where: { OR?: Array<{ email?: string; username?: string }> } }) => {
+    findFirst: async ({ where }: { where: { OR?: Array<{ email?: string; username?: string }>; email?: string; username?: string } }) => {
+      if (where.username) {
+        return prisma.user.findUnique({ where: { username: where.username } });
+      }
+      if (where.email) {
+        const row = db.prepare('SELECT * FROM users WHERE LOWER(email) = LOWER(?) LIMIT 1').get(where.email) as any;
+        if (!row) return null;
+        return prisma.user.findUnique({ where: { id: row.id } });
+      }
       if (where.OR && where.OR.length > 0) {
         for (const item of where.OR) {
-          if (item.email) {
-            const res = await prisma.user.findUnique({ where: { email: item.email } });
-            if (res) return res;
-          }
           if (item.username) {
             const res = await prisma.user.findUnique({ where: { username: item.username } });
             if (res) return res;
           }
+          if (item.email) {
+            const row = db.prepare('SELECT * FROM users WHERE LOWER(email) = LOWER(?) LIMIT 1').get(item.email) as any;
+            if (row) return prisma.user.findUnique({ where: { id: row.id } });
+          }
         }
       }
       return null;
+    },
+
+    findMany: async ({ where = {} }: any = {}) => {
+      let query = 'SELECT * FROM users WHERE 1=1';
+      const params: any[] = [];
+      if (where.email) {
+        query += ' AND LOWER(email) = LOWER(?)';
+        params.push(where.email);
+      }
+      const rows = db.prepare(query).all(...params) as any[];
+      return Promise.all(rows.map((row) => prisma.user.findUnique({ where: { id: row.id } })));
     },
 
     create: async ({ data }: { data: any }) => {
@@ -776,8 +822,18 @@ export const prisma = {
     },
 
     count: async ({ where }: { where?: any } = {}) => {
-      const res = db.prepare('SELECT COUNT(*) as c FROM users').get() as any;
-      return res.c;
+      let query = 'SELECT COUNT(*) as c FROM users WHERE 1=1';
+      const params: any[] = [];
+      if (where?.email) {
+        query += ' AND LOWER(email) = LOWER(?)';
+        params.push(where.email);
+      }
+      if (where?.username) {
+        query += ' AND LOWER(username) = LOWER(?)';
+        params.push(where.username);
+      }
+      const res = db.prepare(query).get(...params) as any;
+      return res?.c || 0;
     }
   },
 
