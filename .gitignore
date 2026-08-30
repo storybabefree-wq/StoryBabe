@@ -28,9 +28,10 @@ apps/*/.env.*
 packages/*/.env
 packages/*/.env.*
 
-# Logs
+# Logs & Tests
 logs/
 *.log
+tests/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
