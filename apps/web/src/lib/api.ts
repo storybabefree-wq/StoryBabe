@@ -69,7 +69,6 @@ export const api = {
       request<ApiResponse<any>>('/auth/forgot-password/reset', { method: 'POST', body: JSON.stringify(body) }),
     resendOtp: (body: { email: string; type: 'REGISTRATION' | 'PASSWORD_RESET' }) =>
       request<ApiResponse<SendOtpResponse>>('/auth/resend-otp', { method: 'POST', body: JSON.stringify(body) }),
-    register: (body: any) => request<ApiResponse<AuthResponse>>('/auth/register', { method: 'POST', body: JSON.stringify(body) }),
     login: (body: any) => request<ApiResponse<AuthResponse>>('/auth/login', { method: 'POST', body: JSON.stringify(body) }),
     getMe: () => request<ApiResponse<AuthUser>>('/auth/me'),
     updateUsername: (username: string) => request<ApiResponse<AuthUser>>('/auth/username', { method: 'PUT', body: JSON.stringify({ username }) }),

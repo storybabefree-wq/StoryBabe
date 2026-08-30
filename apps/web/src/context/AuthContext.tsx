@@ -10,7 +10,6 @@ interface AuthContextType {
   theme: 'light' | 'dark';
   toggleTheme: () => void;
   login: (emailOrUsername: string, password: string) => Promise<void>;
-  register: (data: { email: string; username: string; displayName: string; password: string }) => Promise<void>;
   sendRegisterOtp: (data: { email: string; username: string; displayName: string; password: string }) => Promise<SendOtpResponse>;
   verifyRegisterOtp: (data: { email: string; code: string }) => Promise<void>;
   sendForgotPasswordOtp: (email: string) => Promise<SendOtpResponse>;
@@ -60,19 +59,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const login = async (emailOrUsername: string, password: string) => {
     const res = await api.auth.login({ emailOrUsername: emailOrUsername.trim(), password });
-    if (res.success && res.data) {
-      setToken(res.data.tokens.accessToken);
-      setUser(res.data.user);
-    }
-  };
-
-  const register = async (data: { email: string; username: string; displayName: string; password: string }) => {
-    const res = await api.auth.register({
-      email: data.email.trim().toLowerCase(),
-      username: data.username.trim().toLowerCase(),
-      displayName: data.displayName.trim(),
-      password: data.password
-    });
     if (res.success && res.data) {
       setToken(res.data.tokens.accessToken);
       setUser(res.data.user);
@@ -146,7 +132,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         theme,
         toggleTheme,
         login,
-        register,
         sendRegisterOtp,
         verifyRegisterOtp,
         sendForgotPasswordOtp,

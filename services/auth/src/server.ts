@@ -540,87 +540,15 @@ app.post('/resend-otp', async (req: any, res: any): Promise<void> => {
   }
 });
 
-// Legacy direct register endpoint (fallback)
+// Block direct registration bypass without OTP verification
 app.post('/register', async (req: any, res: any): Promise<void> => {
-  try {
-    const parseResult = registerSchema.safeParse(req.body);
-    if (!parseResult.success) {
-      res.status(400).json({
-        success: false,
-        error: {
-          code: 'VALIDATION_ERROR',
-          message: parseResult.error.errors[0].message,
-          details: parseResult.error.flatten()
-        }
-      });
-      return;
+  res.status(403).json({
+    success: false,
+    error: {
+      code: 'OTP_VERIFICATION_REQUIRED',
+      message: 'Email OTP verification is required to create an account. Please use /register/send-otp and /register/verify-otp.'
     }
-
-    const { email, username, displayName, password } = parseResult.data;
-    const lowerEmail = email.toLowerCase().trim();
-    const lowerUsername = username.toLowerCase().trim();
-
-    const emailAccountsCount = await prisma.user.count({ where: { email: lowerEmail } });
-    if (emailAccountsCount >= 5) {
-      res.status(409).json({
-        success: false,
-        error: {
-          code: 'MAX_ACCOUNTS_EXCEEDED',
-          message: 'Maximum limit of 5 accounts per email address reached. Multiple accounts with the same email limit exceeded.'
-        }
-      });
-      return;
-    }
-
-    const existingUsername = await prisma.user.findUnique({ where: { username: lowerUsername } });
-    if (existingUsername) {
-      res.status(409).json({
-        success: false,
-        error: { code: 'USERNAME_TAKEN', message: 'This username is already taken. Please choose another.' }
-      });
-      return;
-    }
-
-    const passwordHash = await hashPassword(password);
-    const nowIso = new Date().toISOString();
-
-    const user = await prisma.user.create({
-      data: {
-        email: lowerEmail,
-        username: lowerUsername,
-        displayName: displayName.trim(),
-        passwordHash,
-        role: 'AUTHOR',
-        emailVerified: true,
-        emailVerifiedAt: nowIso,
-        usernameChangesCount: 0
-      }
-    });
-
-    const accessToken = signAccessToken({
-      userId: user.id,
-      username: user.username,
-      role: user.role as UserRole,
-      email: user.email
-    });
-
-    const responseData: AuthResponse = {
-      user: formatAuthUser(user),
-      tokens: {
-        accessToken,
-        refreshToken: accessToken,
-        expiresIn: 604800
-      }
-    };
-
-    res.status(201).json({ success: true, data: responseData });
-  } catch (error: any) {
-    console.error('Direct register error:', error);
-    res.status(500).json({
-      success: false,
-      error: { code: 'SERVER_ERROR', message: 'Failed to create user account.' }
-    });
-  }
+  });
 });
 
 // Login
