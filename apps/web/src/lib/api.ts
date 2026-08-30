@@ -11,7 +11,13 @@ import type {
   SendOtpResponse
 } from '@storybabe/types';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api/v1';
+// Robust normalization for API_BASE regardless of trailing slash or format
+const rawApiBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api/v1';
+let normalizedBase = rawApiBase.trim().replace(/\/+$/, '');
+if (!normalizedBase.endsWith('/api/v1')) {
+  normalizedBase = `${normalizedBase}/api/v1`;
+}
+const API_BASE = normalizedBase;
 
 function getToken(): string | null {
   if (typeof window === 'undefined') return null;
@@ -34,11 +40,19 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
     ...(options.headers as Record<string, string>)
   };
 
-  if (token) {
+  // Only attach authorization header if token exists and endpoint is not a public auth endpoint
+  const isPublicAuthEndpoint =
+    endpoint.startsWith('/auth/register') ||
+    endpoint.startsWith('/auth/login') ||
+    endpoint.startsWith('/auth/forgot-password') ||
+    endpoint.startsWith('/auth/resend-otp');
+
+  if (token && !isPublicAuthEndpoint) {
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  const response = await fetch(`${API_BASE}${endpoint}`, {
+  const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+  const response = await fetch(`${API_BASE}${cleanEndpoint}`, {
     ...options,
     headers
   });
@@ -70,7 +84,13 @@ export const api = {
     resendOtp: (body: { email: string; type: 'REGISTRATION' | 'PASSWORD_RESET' }) =>
       request<ApiResponse<SendOtpResponse>>('/auth/resend-otp', { method: 'POST', body: JSON.stringify(body) }),
     login: (body: any) => request<ApiResponse<AuthResponse>>('/auth/login', { method: 'POST', body: JSON.stringify(body) }),
-    getMe: () => request<ApiResponse<AuthUser>>('/auth/me'),
+    getMe: async (): Promise<ApiResponse<AuthUser>> => {
+      const token = getToken();
+      if (!token) {
+        return { success: false, data: undefined as any };
+      }
+      return request<ApiResponse<AuthUser>>('/auth/me');
+    },
     updateUsername: (username: string) => request<ApiResponse<AuthUser>>('/auth/username', { method: 'PUT', body: JSON.stringify({ username }) }),
     updateProfile: (body: any) => request<ApiResponse<AuthUser>>('/auth/profile', { method: 'PUT', body: JSON.stringify(body) }),
     getAuthorProfile: (username: string) => request<ApiResponse<UserProfile>>(`/auth/users/${username}`)
