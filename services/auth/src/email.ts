@@ -1,8 +1,8 @@
 /**
  * StoryBabe Transactional Email Service
- * Production Dual-Engine:
- * 1. Gmail SMTP (Port 587 STARTTLS / Port 465 SSL)
- * 2. Resend HTTPS REST API (Port 443 - Cloud Firewall Proof)
+ * Production Cloud Architecture:
+ * 1. Resend HTTPS REST API (Port 443 - 100% Cloud Firewall Proof, Sub-second delivery on Render)
+ * 2. Gmail SMTP (For environments where outbound SMTP ports are unblocked)
  */
 
 // @ts-ignore
@@ -120,83 +120,17 @@ export async function sendOtpEmail(options: SendOtpOptions): Promise<{ success: 
 </html>
   `.trim();
 
-  const smtpUser = (process.env.SMTP_USER || process.env.GMAIL_USER || '').trim().toLowerCase();
-  const smtpPass = (process.env.SMTP_PASS || process.env.GMAIL_APP_PASSWORD || '').replace(/[^a-zA-Z0-9]/g, '');
   const resendApiKey = (process.env.RESEND_API_KEY || '').trim();
   const resendFromEmail = (process.env.RESEND_FROM_EMAIL || 'StoryBabe <onboarding@resend.dev>').trim();
+  const smtpUser = (process.env.SMTP_USER || process.env.GMAIL_USER || '').trim().toLowerCase();
+  const smtpPass = (process.env.SMTP_PASS || process.env.GMAIL_APP_PASSWORD || '').replace(/[^a-zA-Z0-9]/g, '');
 
   let lastError = '';
 
-  // 1. Attempt Option A: Gmail SMTP (Standard Port 587 STARTTLS for Cloud VMs)
-  if (smtpUser && smtpPass) {
-    try {
-      const transporter = nodemailer.createTransport({
-        host: 'smtp.gmail.com',
-        port: 587,
-        secure: false, // Port 587 uses STARTTLS
-        auth: {
-          user: smtpUser,
-          pass: smtpPass
-        },
-        tls: {
-          rejectUnauthorized: false
-        },
-        connectionTimeout: 5000,
-        greetingTimeout: 5000,
-        socketTimeout: 8000
-      });
-
-      const info = await transporter.sendMail({
-        from: `StoryBabe <${smtpUser}>`,
-        to,
-        subject,
-        html: htmlContent
-      });
-
-      console.log(`[Gmail SMTP 587] OTP email sent successfully to ${to} (${type}) - MessageId: ${info.messageId}`);
-      return { success: true };
-    } catch (err: any) {
-      console.warn(`[Gmail SMTP 587 warning]: ${err.message}. Trying port 465...`);
-      lastError = err.message;
-
-      // Try Port 465 SSL fallback
-      try {
-        const sslTransporter = nodemailer.createTransport({
-          host: 'smtp.gmail.com',
-          port: 465,
-          secure: true,
-          auth: {
-            user: smtpUser,
-            pass: smtpPass
-          },
-          tls: {
-            rejectUnauthorized: false
-          },
-          connectionTimeout: 4000,
-          greetingTimeout: 4000,
-          socketTimeout: 6000
-        });
-
-        const sslInfo = await sslTransporter.sendMail({
-          from: `StoryBabe <${smtpUser}>`,
-          to,
-          subject,
-          html: htmlContent
-        });
-
-        console.log(`[Gmail SMTP 465] OTP email sent successfully to ${to} (${type}) - MessageId: ${sslInfo.messageId}`);
-        return { success: true };
-      } catch (sslErr: any) {
-        console.error('[Gmail SMTP 465 error]:', sslErr.message);
-        lastError = `Gmail SMTP error: ${sslErr.message}`;
-      }
-    }
-  }
-
-  // 2. Attempt Option B: Resend HTTPS REST API (Port 443 - 100% Cloud Firewall Proof)
+  // 1. Primary for Cloud / Render: Resend HTTPS REST API (Port 443 - Never Blocked by Cloud Firewalls)
   if (resendApiKey) {
     try {
-      console.log(`[Resend HTTPS Fallback] Dispatching OTP email via HTTPS to ${to}...`);
+      console.log(`[Resend HTTPS] Dispatching OTP email via Port 443 to ${to}...`);
       const response = await fetch('https://api.resend.com/emails', {
         method: 'POST',
         headers: {
@@ -218,7 +152,7 @@ export async function sendOtpEmail(options: SendOtpOptions): Promise<{ success: 
         const errMsg = data.message || data.error?.message || 'Resend API rejected the email.';
         lastError = `Resend delivery failed: ${errMsg}`;
       } else {
-        console.log(`[Resend HTTPS] OTP email delivered to ${to} (${type}) - ID: ${data.id}`);
+        console.log(`[Resend HTTPS] OTP email delivered successfully to ${to} (${type}) - ID: ${data.id}`);
         return { success: true };
       }
     } catch (err: any) {
@@ -227,11 +161,45 @@ export async function sendOtpEmail(options: SendOtpOptions): Promise<{ success: 
     }
   }
 
-  // 3. Fallback / Final Production Response
+  // 2. Secondary: Gmail SMTP (For unblocked environments)
+  if (smtpUser && smtpPass) {
+    try {
+      const transporter = nodemailer.createTransport({
+        host: 'smtp.gmail.com',
+        port: 587,
+        secure: false,
+        auth: {
+          user: smtpUser,
+          pass: smtpPass
+        },
+        tls: {
+          rejectUnauthorized: false
+        },
+        connectionTimeout: 4000,
+        greetingTimeout: 4000,
+        socketTimeout: 5000
+      });
+
+      const info = await transporter.sendMail({
+        from: `StoryBabe <${smtpUser}>`,
+        to,
+        subject,
+        html: htmlContent
+      });
+
+      console.log(`[Gmail SMTP 587] OTP email sent successfully to ${to} (${type}) - MessageId: ${info.messageId}`);
+      return { success: true };
+    } catch (err: any) {
+      console.warn(`[Gmail SMTP 587 error]: ${err.message}`);
+      lastError = `Gmail SMTP error: ${err.message}. (Note: Cloud hosts like Render block raw SMTP ports; please configure RESEND_API_KEY in Render).`;
+    }
+  }
+
+  // 3. Final Production Response
   if (process.env.NODE_ENV === 'production') {
     return {
       success: false,
-      error: lastError || 'Email delivery failed. Please verify your email credentials in Render.'
+      error: lastError || 'Email service not configured. Please set RESEND_API_KEY in Render environment variables.'
     };
   }
 
