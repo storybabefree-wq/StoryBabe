@@ -120,6 +120,17 @@ app.post('/register/send-otp', async (req: any, res: any): Promise<void> => {
       displayName
     });
 
+    if (!emailResult.success) {
+      res.status(500).json({
+        success: false,
+        error: {
+          code: 'EMAIL_DELIVERY_FAILED',
+          message: emailResult.error || 'Failed to dispatch verification email. Please check your email configuration in Render.'
+        }
+      });
+      return;
+    }
+
     res.status(200).json({
       success: true,
       data: {
@@ -342,6 +353,17 @@ app.post('/forgot-password/send-otp', async (req: any, res: any): Promise<void> 
       displayName: user.displayName
     });
 
+    if (!emailResult.success) {
+      res.status(500).json({
+        success: false,
+        error: {
+          code: 'EMAIL_DELIVERY_FAILED',
+          message: emailResult.error || 'Failed to dispatch password reset email. Please check your email configuration in Render.'
+        }
+      });
+      return;
+    }
+
     res.status(200).json({
       success: true,
       data: {
@@ -521,6 +543,17 @@ app.post('/resend-otp', async (req: any, res: any): Promise<void> => {
       code,
       type
     });
+
+    if (!emailResult.success) {
+      res.status(500).json({
+        success: false,
+        error: {
+          code: 'EMAIL_DELIVERY_FAILED',
+          message: emailResult.error || 'Failed to dispatch verification email. Please check your email configuration in Render.'
+        }
+      });
+      return;
+    }
 
     res.status(200).json({
       success: true,

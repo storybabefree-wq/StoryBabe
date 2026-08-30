@@ -121,37 +121,48 @@ export async function sendOtpEmail(options: SendOtpOptions): Promise<{ success: 
 </html>
   `.trim();
 
-  // Option A: Gmail SMTP / Custom SMTP (Free with Gmail App Password - Sends to ANY email recipient!)
-  const smtpUser = process.env.SMTP_USER || process.env.GMAIL_USER;
-  const smtpPass = process.env.SMTP_PASS || process.env.GMAIL_APP_PASSWORD;
+  // 1. Option A: Gmail SMTP / Custom SMTP
+  const smtpUser = (process.env.SMTP_USER || process.env.GMAIL_USER || '').trim();
+  const smtpPass = (process.env.SMTP_PASS || process.env.GMAIL_APP_PASSWORD || '').replace(/\s+/g, '');
 
   if (smtpUser && smtpPass) {
     try {
       const transporter = nodemailer.createTransport({
-        service: 'gmail',
+        host: 'smtp.gmail.com',
+        port: 465,
+        secure: true,
         auth: {
           user: smtpUser,
-          pass: smtpPass.replace(/\s+/g, '') // remove spaces from 16-letter app password
-        }
+          pass: smtpPass
+        },
+        connectionTimeout: 10000,
+        greetingTimeout: 10000,
+        socketTimeout: 10000
       });
 
-      await transporter.sendMail({
+      const info = await transporter.sendMail({
         from: `StoryBabe <${smtpUser}>`,
         to,
         subject,
         html: htmlContent
       });
 
-      console.log(`[Gmail SMTP] OTP email sent successfully to ${to} (${type})`);
+      console.log(`[Gmail SMTP] OTP email sent successfully to ${to} (${type}) - MsgId: ${info.messageId}`);
       return { success: true };
     } catch (err: any) {
-      console.error('[Gmail SMTP Error]:', err.message);
+      console.error('[Gmail SMTP Delivery Error]:', err.message);
+      if (process.env.NODE_ENV === 'production') {
+        return {
+          success: false,
+          error: `Failed to deliver email via Gmail SMTP: ${err.message}. Please verify your Google App Password.`
+        };
+      }
     }
   }
 
-  // Option B: Resend API (when RESEND_API_KEY is configured)
-  const apiKey = process.env.RESEND_API_KEY;
-  const fromEmail = process.env.RESEND_FROM_EMAIL || 'StoryBabe <onboarding@resend.dev>';
+  // 2. Option B: Resend API (when RESEND_API_KEY is configured)
+  const apiKey = (process.env.RESEND_API_KEY || '').trim();
+  const fromEmail = (process.env.RESEND_FROM_EMAIL || 'StoryBabe <onboarding@resend.dev>').trim();
 
   if (apiKey) {
     try {
@@ -169,23 +180,40 @@ export async function sendOtpEmail(options: SendOtpOptions): Promise<{ success: 
         })
       });
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        console.error('[Resend API Error]:', errorData);
-        console.log(`\n========================================\n[AUTH DEV OTP] Email to: ${to}\n[AUTH DEV OTP] Action: ${type}\n[AUTH DEV OTP] Code: ${code}\n========================================\n`);
-        return { success: true, isDevFallback: true };
-      }
+      const data = await response.json().catch(() => ({}));
 
-      console.log(`[Resend] OTP email sent successfully to ${to} (${type})`);
-      return { success: true };
+      if (!response.ok) {
+        console.error('[Resend API Error]:', data);
+        const errMsg = data.message || data.error?.message || 'Resend API rejected the email.';
+        if (process.env.NODE_ENV === 'production') {
+          return {
+            success: false,
+            error: `Resend email delivery failed: ${errMsg}`
+          };
+        }
+      } else {
+        console.log(`[Resend] OTP email sent successfully to ${to} (${type}) - ID: ${data.id}`);
+        return { success: true };
+      }
     } catch (err: any) {
       console.error('[Email Dispatch Error]:', err.message);
-      console.log(`\n========================================\n[AUTH DEV OTP] Email to: ${to}\n[AUTH DEV OTP] Action: ${type}\n[AUTH DEV OTP] Code: ${code}\n========================================\n`);
-      return { success: true, isDevFallback: true };
+      if (process.env.NODE_ENV === 'production') {
+        return {
+          success: false,
+          error: `Email delivery connection error: ${err.message}`
+        };
+      }
     }
   }
 
-  // Option C: Local Testing Fallback
+  // 3. Option C: Development / Local Testing Fallback
+  if (process.env.NODE_ENV === 'production') {
+    return {
+      success: false,
+      error: 'No email service configured on server. Please set SMTP_USER and SMTP_PASS (Google App Password) or RESEND_API_KEY in Render environment variables.'
+    };
+  }
+
   console.log(`\n========================================\n[AUTH DEV OTP] Email to: ${to}\n[AUTH DEV OTP] Action: ${type}\n[AUTH DEV OTP] Code: ${code}\n========================================\n`);
   return { success: true, isDevFallback: true };
 }
