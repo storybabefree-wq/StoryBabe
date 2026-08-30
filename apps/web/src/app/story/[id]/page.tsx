@@ -262,10 +262,10 @@ export default function StoryDetailPage() {
       : {};
 
   return (
-    <div className={readerThemeClass} style={{ minHeight: '80vh', transition: 'background-color 0.2s ease' }}>
-      <div style={{ maxWidth: '840px', margin: '0 auto', padding: '2rem 1.25rem' }}>
+    <div className={readerThemeClass} style={{ minHeight: '80vh', transition: 'background-color 0.2s ease', width: '100%' }}>
+      <div className="page-container" style={{ maxWidth: '840px' }}>
         {/* Top Breadcrumb & Actions */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '0.75rem' }}>
           <Link href="/" className="btn btn-sm btn-ghost" style={{ gap: '0.375rem', paddingLeft: 0 }}>
             <ArrowLeft size={16} />
             <span>Stories Feed</span>
@@ -696,7 +696,7 @@ export default function StoryDetailPage() {
             gap: '1rem'
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', flexWrap: 'wrap' }}>
             <button
               onClick={handleToggleLike}
               className={`btn btn-md ${isLiked ? 'btn-primary' : 'btn-secondary'}`}
@@ -708,7 +708,7 @@ export default function StoryDetailPage() {
               }}
             >
               <Heart size={18} fill={isLiked ? '#FFFFFF' : 'none'} />
-              <span>{isLiked ? 'I Connected With This' : 'I Connect With This'}</span>
+              <span>{isLiked ? 'Connected' : 'I Connect'}</span>
               <span style={{ fontWeight: 700 }}>({likesCount})</span>
             </button>
 
@@ -721,12 +721,10 @@ export default function StoryDetailPage() {
               <Bookmark size={17} fill={isBookmarked ? 'currentColor' : 'none'} />
               <span>{isBookmarked ? 'Bookmarked' : 'Bookmark'}</span>
             </button>
-          </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <button onClick={handleShare} className="btn btn-sm btn-ghost" style={{ gap: '0.375rem' }}>
               <Share2 size={15} />
-              <span>{copied ? 'Link Copied!' : 'Share Story'}</span>
+              <span>{copied ? 'Copied!' : 'Share'}</span>
             </button>
           </div>
         </section>

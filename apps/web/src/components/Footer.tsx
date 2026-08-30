@@ -8,8 +8,9 @@ export default function Footer() {
       style={{
         borderTop: '1px solid var(--border-subtle)',
         backgroundColor: 'var(--bg-secondary)',
-        padding: '3rem 1.25rem 2.5rem',
-        marginTop: 'auto'
+        padding: '2.5rem 1.25rem 6rem',
+        marginTop: 'auto',
+        width: '100%'
       }}
     >
       <div

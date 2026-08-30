@@ -83,14 +83,14 @@ export default function ModerationPage() {
   };
 
   return (
-    <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '2rem 1.25rem' }}>
+    <div className="page-container">
       {/* Dashboard Header */}
-      <div style={{ borderBottom: '1px solid var(--border-subtle)', paddingBottom: '1.5rem', marginBottom: '2rem' }}>
+      <div style={{ borderBottom: '1px solid var(--border-subtle)', paddingBottom: '1.25rem', marginBottom: '1.75rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', marginBottom: '0.375rem' }}>
           <ShieldAlert size={24} color="var(--accent-primary)" />
-          <h1 style={{ fontFamily: 'var(--font-serif)', fontSize: '2rem' }}>Safety Desk & Moderation</h1>
+          <h1 style={{ fontFamily: 'var(--font-serif)', fontSize: 'clamp(1.5rem, 5vw, 2rem)' }}>Safety Desk & Moderation</h1>
         </div>
-        <p style={{ color: 'var(--text-secondary)', fontSize: '0.9375rem' }}>
+        <p style={{ color: 'var(--text-secondary)', fontSize: '0.90625rem' }}>
           Prioritized review queue for non-consensual identification reports and community safety triage.
         </p>
       </div>
@@ -100,7 +100,7 @@ export default function ModerationPage() {
         <div
           className="card"
           style={{
-            padding: '2.5rem',
+            padding: '2rem 1.25rem',
             textAlign: 'center',
             backgroundColor: 'var(--bg-secondary)',
             maxWidth: '640px',
@@ -119,7 +119,7 @@ export default function ModerationPage() {
       ) : (
         <>
           {/* Queue Statistics Cards */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', marginBottom: '1.75rem' }}>
             {/* Priority Queue Card */}
             <div
               onClick={() => setActiveQueue('priority')}
@@ -140,8 +140,8 @@ export default function ModerationPage() {
               <div style={{ fontSize: '2rem', fontWeight: 700, color: 'var(--priority-badge-text)' }}>
                 {stats.priorityPending}
               </div>
-              <div style={{ fontSize: '0.75rem', color: 'var(--priority-badge-text)', opacity: 0.85 }}>
-                Identifies without consent (Urgent SLA)
+              <div style={{ fontSize: '0.75rem', color: 'var(--priority-badge-text)', marginTop: '0.25rem' }}>
+                Require human review within 24h
               </div>
             </div>
 
@@ -152,26 +152,32 @@ export default function ModerationPage() {
               style={{
                 padding: '1.25rem',
                 cursor: 'pointer',
-                borderColor: activeQueue === 'standard' ? 'var(--text-primary)' : 'var(--border-subtle)',
+                borderColor: activeQueue === 'standard' ? 'var(--accent-primary)' : 'var(--border-subtle)',
                 backgroundColor: activeQueue === 'standard' ? 'var(--bg-secondary)' : 'var(--bg-card)'
               }}
             >
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
-                <span style={{ fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-muted)' }}>
-                  Standard Abuse Queue
+                <span style={{ fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-secondary)' }}>
+                  Standard Queue
                 </span>
                 <Clock size={16} color="var(--text-muted)" />
               </div>
               <div style={{ fontSize: '2rem', fontWeight: 700, color: 'var(--text-primary)' }}>
                 {stats.standardPending}
               </div>
-              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                Harassment, spam, copyright
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
+                Spam, harassment, copyright
               </div>
             </div>
 
-            {/* Resolved Total */}
-            <div className="card" style={{ padding: '1.25rem', backgroundColor: 'var(--bg-card)' }}>
+            {/* Resolved Total Card */}
+            <div
+              className="card"
+              style={{
+                padding: '1.25rem',
+                backgroundColor: 'var(--bg-card)'
+              }}
+            >
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
                 <span style={{ fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--status-ongoing-text)' }}>
                   Resolved Actions
@@ -181,21 +187,21 @@ export default function ModerationPage() {
               <div style={{ fontSize: '2rem', fontWeight: 700, color: 'var(--status-ongoing-text)' }}>
                 {stats.resolvedTotal}
               </div>
-              <div style={{ fontSize: '0.75rem', color: 'var(--status-ongoing-text)', opacity: 0.85 }}>
-                Reports audited and resolved
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
+                Actions completed to date
               </div>
             </div>
           </div>
 
-          {/* Queue Tab Bar */}
-          <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '0.75rem' }}>
+          {/* Queue Filter Tabs */}
+          <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.25rem', flexWrap: 'wrap' }}>
             <button
               onClick={() => setActiveQueue('priority')}
-              className={`btn btn-sm ${activeQueue === 'priority' ? 'btn-accent' : 'btn-ghost'}`}
+              className={`btn btn-sm ${activeQueue === 'priority' ? 'btn-primary' : 'btn-ghost'}`}
               style={{ fontWeight: 600 }}
             >
               <AlertTriangle size={14} />
-              <span>Priority Queue ({stats.priorityPending})</span>
+              <span>Priority No-Consent Queue ({stats.priorityPending})</span>
             </button>
 
             <button
@@ -209,7 +215,7 @@ export default function ModerationPage() {
           </div>
 
           {/* Report Review List and Detail Layout */}
-          <div style={{ display: 'grid', gridTemplateColumns: selectedReport ? '1fr 1fr' : '1fr', gap: '1.5rem' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: selectedReport ? 'repeat(auto-fit, minmax(320px, 1fr))' : '1fr', gap: '1.5rem' }}>
             {/* Reports List */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
               {isLoading ? (

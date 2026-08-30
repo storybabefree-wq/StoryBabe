@@ -37,7 +37,7 @@ export default function FollowingPage() {
 
   if (!user) {
     return (
-      <div style={{ maxWidth: '600px', margin: '4rem auto', textAlign: 'center', padding: '0 1.25rem' }}>
+      <div className="page-container" style={{ maxWidth: '600px', textAlign: 'center' }}>
         <Users size={36} color="var(--accent-primary)" style={{ margin: '0 auto 1rem' }} />
         <h2 style={{ fontSize: '1.5rem', marginBottom: '0.5rem' }}>Follow the Voices You Connect With</h2>
         <p style={{ color: 'var(--text-secondary)', fontSize: '0.9375rem', marginBottom: '1.5rem', lineHeight: 1.6 }}>
@@ -52,21 +52,21 @@ export default function FollowingPage() {
   }
 
   return (
-    <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '2rem 1.25rem' }}>
-      <div style={{ borderBottom: '1px solid var(--border-subtle)', paddingBottom: '1.5rem', marginBottom: '2rem' }}>
+    <div className="page-container">
+      <div style={{ borderBottom: '1px solid var(--border-subtle)', paddingBottom: '1.25rem', marginBottom: '1.75rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
           <Users size={22} color="var(--accent-primary)" />
-          <h1 style={{ fontFamily: 'var(--font-serif)', fontSize: '2rem' }}>Following Feed</h1>
+          <h1 style={{ fontFamily: 'var(--font-serif)', fontSize: 'clamp(1.5rem, 5vw, 2rem)' }}>Following Feed</h1>
         </div>
-        <p style={{ color: 'var(--text-secondary)', fontSize: '0.9375rem' }}>
+        <p style={{ color: 'var(--text-secondary)', fontSize: '0.90625rem' }}>
           Latest experiences and serialized episodes from authors you follow.
         </p>
       </div>
 
       {isLoading ? (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: '1.25rem' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 320px), 1fr))', gap: '1.25rem' }}>
           {[1, 2, 3].map((n) => (
-            <div key={n} className="card" style={{ height: '240px', padding: '1.375rem' }}>
+            <div key={n} className="card" style={{ height: '240px', padding: '1.25rem' }}>
               <div className="skeleton" style={{ height: '20px', width: '40%', marginBottom: '1rem' }} />
               <div className="skeleton" style={{ height: '24px', width: '80%', marginBottom: '0.75rem' }} />
               <div className="skeleton" style={{ height: '60px', width: '100%' }} />
@@ -77,7 +77,7 @@ export default function FollowingPage() {
         <div
           className="card"
           style={{
-            padding: '3.5rem 1.5rem',
+            padding: '3rem 1.25rem',
             textAlign: 'center',
             color: 'var(--text-muted)'
           }}
@@ -94,7 +94,7 @@ export default function FollowingPage() {
           </Link>
         </div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: '1.25rem' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 320px), 1fr))', gap: '1.5rem' }}>
           {stories.map((story) => (
             <StoryCard key={story.id} story={story} />
           ))}

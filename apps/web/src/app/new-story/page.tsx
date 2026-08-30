@@ -278,21 +278,21 @@ export default function NewStoryPage() {
       )}
 
       {/* Two Column Studio Layout */}
-      <form onSubmit={handleSubmit} style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.4fr) minmax(0, 1fr)', gap: '2.5rem', alignItems: 'start' }}>
+      <form onSubmit={handleSubmit} className="editor-grid">
         {/* Left Column: Story Editor & Poster Studio */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
           {/* 1. Story Type Selector */}
-          <div className="card" style={{ padding: '1.5rem' }}>
+          <div className="card" style={{ padding: '1.25rem' }}>
             <label style={{ display: 'block', fontWeight: 700, fontSize: '0.9375rem', marginBottom: '0.75rem' }}>
               Story Structure *
             </label>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '0.75rem' }}>
               <button
                 type="button"
                 onClick={() => setType('SINGLE')}
                 className={`card ${type === 'SINGLE' ? 'card-selected' : ''}`}
                 style={{
-                  padding: '1.125rem',
+                  padding: '1rem',
                   textAlign: 'left',
                   cursor: 'pointer',
                   border: type === 'SINGLE' ? '2px solid var(--accent-primary)' : '1px solid var(--border-subtle)',
@@ -301,9 +301,9 @@ export default function NewStoryPage() {
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.375rem' }}>
                   <FileText size={18} color="var(--accent-primary)" />
-                  <strong style={{ fontSize: '1rem', color: 'var(--text-primary)' }}>Single Story</strong>
+                  <strong style={{ fontSize: '0.9375rem', color: 'var(--text-primary)' }}>Single Story</strong>
                 </div>
-                <p style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', margin: 0, lineHeight: 1.4 }}>
+                <p style={{ fontSize: '0.78125rem', color: 'var(--text-secondary)', margin: 0, lineHeight: 1.4 }}>
                   One-shot complete personal narrative.
                 </p>
               </button>
@@ -313,7 +313,7 @@ export default function NewStoryPage() {
                 onClick={() => setType('SERIES')}
                 className={`card ${type === 'SERIES' ? 'card-selected' : ''}`}
                 style={{
-                  padding: '1.125rem',
+                  padding: '1rem',
                   textAlign: 'left',
                   cursor: 'pointer',
                   border: type === 'SERIES' ? '2px solid var(--accent-primary)' : '1px solid var(--border-subtle)',
@@ -322,19 +322,19 @@ export default function NewStoryPage() {
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.375rem' }}>
                   <Layers size={18} color="var(--accent-primary)" />
-                  <strong style={{ fontSize: '1rem', color: 'var(--text-primary)' }}>Series</strong>
+                  <strong style={{ fontSize: '0.9375rem', color: 'var(--text-primary)' }}>Series</strong>
                 </div>
-                <p style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', margin: 0, lineHeight: 1.4 }}>
+                <p style={{ fontSize: '0.78125rem', color: 'var(--text-secondary)', margin: 0, lineHeight: 1.4 }}>
                   Multi-part personal journey with Season/Episode format.
                 </p>
               </button>
             </div>
           </div>
 
-          {/* 2. Title & Summary */}
-          <div className="card" style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+          {/* 2. Story Core Details */}
+          <div className="card" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
             <div>
-              <label style={{ display: 'block', fontWeight: 700, fontSize: '0.9375rem', marginBottom: '0.5rem' }}>
+              <label style={{ display: 'block', fontWeight: 700, fontSize: '0.84375rem', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: '0.375rem' }}>
                 Story Title *
               </label>
               <input
@@ -342,64 +342,80 @@ export default function NewStoryPage() {
                 required
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                placeholder="e.g. The Blue Wool Coat in the Closet"
+                placeholder="e.g., The 4:00 AM Decision That Changed Everything"
                 className="input"
-                maxLength={150}
+                maxLength={120}
               />
             </div>
 
             <div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
-                <label style={{ fontWeight: 700, fontSize: '0.9375rem' }}>
-                  Description / Summary *
-                </label>
-                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                  {summary.length}/500 chars
-                </span>
-              </div>
+              <label style={{ display: 'block', fontWeight: 700, fontSize: '0.84375rem', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: '0.375rem' }}>
+                Oneliner Hook Quote (Appears on Feed Poster)
+              </label>
+              <input
+                type="text"
+                value={oneliner}
+                onChange={(e) => setOneliner(e.target.value)}
+                placeholder="e.g., You have to walk away from the life you planned..."
+                className="input"
+                maxLength={160}
+              />
+            </div>
+
+            <div>
+              <label style={{ display: 'block', fontWeight: 700, fontSize: '0.84375rem', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: '0.375rem' }}>
+                Short Summary Description *
+              </label>
               <textarea
                 required
                 value={summary}
                 onChange={(e) => setSummary(e.target.value)}
-                placeholder="Write a clear 2-3 sentence summary of what this experience is about..."
+                placeholder="2-3 sentence overview of this personal experience..."
                 className="textarea"
-                rows={3}
-                maxLength={500}
+                rows={2}
+                maxLength={400}
               />
             </div>
           </div>
 
-          {/* 3. Interactive Poster Studio (OpenRouter Image Integration) */}
-          <div className="card" style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          {/* 3. Visual Poster Studio */}
+          <div className="card" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
               <div>
-                <h3 style={{ fontSize: '1.125rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                  <ImageIcon size={18} color="var(--accent-primary)" />
-                  <span>Story Poster & Hook Studio</span>
-                </h3>
-                <p style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', marginTop: '0.25rem' }}>
-                  Interactive AI prompt studio and oneliner typography overlay.
-                </p>
+                <label style={{ fontWeight: 700, fontSize: '0.9375rem', display: 'block' }}>Visual Cover Poster</label>
+                <span style={{ fontSize: '0.78125rem', color: 'var(--text-muted)' }}>4:5 vertical portrait artwork</span>
+              </div>
+
+              {/* Poster Style Selector */}
+              <div style={{ display: 'flex', gap: '0.25rem', backgroundColor: 'var(--bg-secondary)', padding: '2px', borderRadius: 'var(--radius-sm)' }}>
+                <button
+                  type="button"
+                  onClick={() => setPosterStyle('bottom-gradient')}
+                  className={`btn btn-sm ${posterStyle === 'bottom-gradient' ? 'btn-primary' : 'btn-ghost'}`}
+                  style={{ padding: '2px 8px', fontSize: '0.75rem' }}
+                >
+                  Gradient
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPosterStyle('center-spotlight')}
+                  className={`btn btn-sm ${posterStyle === 'center-spotlight' ? 'btn-primary' : 'btn-ghost'}`}
+                  style={{ padding: '2px 8px', fontSize: '0.75rem' }}
+                >
+                  Spotlight
+                </button>
               </div>
             </div>
 
-            {/* Poster Mode Tabs */}
-            <div
-              style={{
-                display: 'flex',
-                gap: '0.5rem',
-                backgroundColor: 'var(--bg-secondary)',
-                padding: '0.25rem',
-                borderRadius: 'var(--radius-md)'
-              }}
-            >
+            {/* Poster Source Mode Tabs */}
+            <div style={{ display: 'flex', gap: '0.375rem', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '0.625rem' }}>
               <button
                 type="button"
                 onClick={() => setPosterMode('AI')}
                 className={`btn btn-sm ${posterMode === 'AI' ? 'btn-primary' : 'btn-ghost'}`}
                 style={{ flex: 1 }}
               >
-                AI Prompt Studio
+                AI Studio
               </button>
               <button
                 type="button"
@@ -407,7 +423,7 @@ export default function NewStoryPage() {
                 className={`btn btn-sm ${posterMode === 'PRESET' ? 'btn-primary' : 'btn-ghost'}`}
                 style={{ flex: 1 }}
               >
-                Curated Presets
+                Presets
               </button>
               <button
                 type="button"
@@ -421,20 +437,20 @@ export default function NewStoryPage() {
 
             {/* AI Interactive Prompt Studio View */}
             {posterMode === 'AI' && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', backgroundColor: 'var(--bg-secondary)', padding: '1rem', borderRadius: 'var(--radius-md)' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <label style={{ fontSize: '0.8125rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-muted)' }}>
-                    Visual Scene Prompt (Editable)
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.875rem', backgroundColor: 'var(--bg-secondary)', padding: '0.875rem', borderRadius: 'var(--radius-md)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.375rem' }}>
+                  <label style={{ fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-muted)' }}>
+                    Scene Prompt
                   </label>
                   <button
                     type="button"
                     onClick={handleSuggestPrompt}
                     disabled={isSuggestingPrompt}
                     className="btn btn-sm btn-secondary"
-                    style={{ gap: '0.375rem', fontSize: '0.75rem', padding: '0.25rem 0.5rem' }}
+                    style={{ gap: '0.375rem', fontSize: '0.75rem', padding: '0.2rem 0.5rem' }}
                   >
                     <Wand2 size={13} />
-                    <span>{isSuggestingPrompt ? 'Analyzing Mood...' : 'Suggest Scene from Story'}</span>
+                    <span>{isSuggestingPrompt ? 'Analyzing...' : 'Suggest Scene'}</span>
                   </button>
                 </div>
 
@@ -461,7 +477,7 @@ export default function NewStoryPage() {
                           type="button"
                           onClick={() => handleToggleModifier(mod)}
                           style={{
-                            padding: '0.25rem 0.625rem',
+                            padding: '0.25rem 0.5rem',
                             borderRadius: 'var(--radius-sm)',
                             fontSize: '0.75rem',
                             fontWeight: 600,
@@ -495,7 +511,7 @@ export default function NewStoryPage() {
 
             {/* Presets Grid */}
             {posterMode === 'PRESET' && (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.75rem' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))', gap: '0.625rem' }}>
                 {AESTHETIC_PRESETS.map((preset) => {
                   const isSelected = selectedPresetId === preset.id;
                   return (

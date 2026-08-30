@@ -140,7 +140,7 @@ export default function ProfilePage() {
       <section
         className="card"
         style={{
-          padding: '2rem',
+          padding: '1.5rem',
           marginBottom: '2rem',
           backgroundColor: 'var(--bg-card)',
           position: 'relative'
@@ -152,20 +152,20 @@ export default function ProfilePage() {
             justifyContent: 'space-between',
             alignItems: 'flex-start',
             flexWrap: 'wrap',
-            gap: '1.5rem'
+            gap: '1.25rem'
           }}
         >
-          <div style={{ display: 'flex', gap: '1.25rem', alignItems: 'flex-start' }}>
+          <div style={{ display: 'flex', gap: '1rem', alignItems: 'flex-start', flexWrap: 'wrap', flex: 1, minWidth: '240px' }}>
             <div
               style={{
-                width: '64px',
-                height: '64px',
+                width: '56px',
+                height: '56px',
                 borderRadius: '50%',
                 backgroundColor: 'var(--border-subtle)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                fontSize: '1.75rem',
+                fontSize: '1.5rem',
                 fontWeight: 700,
                 color: 'var(--text-primary)',
                 flexShrink: 0
@@ -174,22 +174,22 @@ export default function ProfilePage() {
               {profile.displayName.charAt(0).toUpperCase()}
             </div>
 
-            <div>
-              <h1 style={{ fontSize: '1.75rem', fontWeight: 700, marginBottom: '0.25rem' }}>
+            <div style={{ flex: 1, minWidth: '200px' }}>
+              <h1 style={{ fontSize: '1.5rem', fontWeight: 800, marginBottom: '0.25rem' }}>
                 {profile.displayName}
               </h1>
-              <div style={{ fontSize: '0.9375rem', color: 'var(--text-muted)', marginBottom: '0.75rem' }}>
+              <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginBottom: '0.625rem' }}>
                 @{profile.username}
               </div>
 
               {profile.bio && (
-                <p style={{ fontSize: '0.9375rem', color: 'var(--text-secondary)', lineHeight: 1.6, maxWidth: '580px', marginBottom: '0.75rem' }}>
+                <p style={{ fontSize: '0.90625rem', color: 'var(--text-secondary)', lineHeight: 1.5, maxWidth: '580px', marginBottom: '0.75rem' }}>
                   {profile.bio}
                 </p>
               )}
 
               {/* Stats */}
-              <div style={{ display: 'flex', gap: '1.5rem', fontSize: '0.84375rem', color: 'var(--text-muted)', marginTop: '0.5rem' }}>
+              <div style={{ display: 'flex', gap: '1.25rem', fontSize: '0.8125rem', color: 'var(--text-muted)', marginTop: '0.5rem', flexWrap: 'wrap' }}>
                 <div>
                   <strong style={{ color: 'var(--text-primary)' }}>{followersCount}</strong> Followers
                 </div>
@@ -206,7 +206,7 @@ export default function ProfilePage() {
           {/* Action Buttons */}
           <div>
             {isOwner ? (
-              <div style={{ display: 'flex', gap: '0.5rem' }}>
+              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
                 <button
                   onClick={() => setShowEditProfileModal(true)}
                   className="btn btn-sm btn-secondary"

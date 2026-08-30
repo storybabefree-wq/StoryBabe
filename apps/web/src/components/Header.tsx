@@ -16,9 +16,9 @@ import {
   Sparkles,
   ChevronDown,
   Settings,
-  UserCheck,
   CheckCircle2,
-  Lock
+  Lock,
+  Home
 } from 'lucide-react';
 import AuthModal from './AuthModal';
 import UsernameModal from './UsernameModal';
@@ -46,6 +46,7 @@ export default function Header() {
 
   return (
     <>
+      {/* Top Header */}
       <header
         style={{
           borderBottom: '1px solid var(--border-subtle)',
@@ -53,22 +54,23 @@ export default function Header() {
           position: 'sticky',
           top: 0,
           zIndex: 50,
-          boxShadow: 'var(--shadow-subtle)'
+          boxShadow: 'var(--shadow-subtle)',
+          width: '100%'
         }}
       >
         <div
           style={{
             maxWidth: '1200px',
             margin: '0 auto',
-            padding: '0.875rem 1.25rem',
+            padding: '0.75rem 1rem',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            gap: '1rem'
+            gap: '0.75rem'
           }}
         >
           {/* Brand Wordmark & Primary Clean Navigation */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '2rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
             <Link
               href="/"
               style={{
@@ -81,8 +83,8 @@ export default function Header() {
               <span
                 style={{
                   fontFamily: 'var(--font-serif)',
-                  fontSize: '1.5rem',
-                  fontWeight: 700,
+                  fontSize: 'clamp(1.25rem, 4vw, 1.5rem)',
+                  fontWeight: 800,
                   letterSpacing: '-0.03em',
                   color: 'var(--text-primary)'
                 }}
@@ -101,12 +103,12 @@ export default function Header() {
               />
             </Link>
 
-            {/* Clean Core Navigation Links */}
-            <nav style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
+            {/* Desktop Core Navigation Links */}
+            <nav className="desktop-nav" style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
               <Link
                 href="/"
                 className={`btn btn-sm ${pathname === '/' ? 'btn-secondary' : 'btn-ghost'}`}
-                style={{ fontWeight: pathname === '/' ? 600 : 500 }}
+                style={{ fontWeight: pathname === '/' ? 700 : 500 }}
               >
                 <BookOpen size={16} />
                 <span>Read</span>
@@ -116,7 +118,7 @@ export default function Header() {
                 <Link
                   href="/following"
                   className={`btn btn-sm ${pathname === '/following' ? 'btn-secondary' : 'btn-ghost'}`}
-                  style={{ fontWeight: pathname === '/following' ? 600 : 500 }}
+                  style={{ fontWeight: pathname === '/following' ? 700 : 500 }}
                 >
                   <Users size={16} />
                   <span>Following</span>
@@ -126,7 +128,7 @@ export default function Header() {
               <Link
                 href="/new-story"
                 className={`btn btn-sm ${pathname === '/new-story' ? 'btn-primary' : 'btn-ghost'}`}
-                style={{ fontWeight: 600 }}
+                style={{ fontWeight: 700 }}
               >
                 <PenSquare size={16} />
                 <span>Write</span>
@@ -135,7 +137,7 @@ export default function Header() {
           </div>
 
           {/* Right Action Bar: Theme + User / Settings Dropdown */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }} ref={menuRef}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }} ref={menuRef}>
             {/* Theme Toggle Button */}
             <button
               onClick={toggleTheme}
@@ -152,7 +154,7 @@ export default function Header() {
                 <button
                   onClick={() => setShowSettingsMenu(!showSettingsMenu)}
                   className="btn btn-sm btn-secondary"
-                  style={{ gap: '0.5rem', padding: '0.375rem 0.625rem' }}
+                  style={{ gap: '0.375rem', padding: '0.3rem 0.5rem' }}
                 >
                   <div
                     style={{
@@ -183,7 +185,7 @@ export default function Header() {
                       {user.displayName.charAt(0).toUpperCase()}
                     </div>
                   </div>
-                  <span style={{ fontWeight: 600, maxWidth: '110px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <span style={{ fontWeight: 600, maxWidth: '90px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {user.displayName}
                   </span>
                   <ChevronDown size={14} />
@@ -247,7 +249,7 @@ export default function Header() {
                       <span>Change Username</span>
                     </button>
 
-                    {/* Admin Safety Desk Option (Only visible to Admin role) */}
+                    {/* Admin Safety Desk Option */}
                     {user.role === 'ADMIN' && (
                       <Link
                         href="/moderation"
@@ -283,7 +285,7 @@ export default function Header() {
                 <button
                   onClick={() => setShowAuthModal(true)}
                   className="btn btn-sm btn-primary"
-                  style={{ fontWeight: 600 }}
+                  style={{ fontWeight: 700 }}
                 >
                   Sign In
                 </button>
@@ -292,6 +294,55 @@ export default function Header() {
           </div>
         </div>
       </header>
+
+      {/* Mobile Bottom Navigation Bar (< 768px) */}
+      <nav className="mobile-bottom-nav" aria-label="Mobile Navigation">
+        <Link href="/" className={`mobile-nav-item ${pathname === '/' ? 'active' : ''}`}>
+          <Home size={20} />
+          <span>Feed</span>
+        </Link>
+
+        {user ? (
+          <Link href="/following" className={`mobile-nav-item ${pathname === '/following' ? 'active' : ''}`}>
+            <Users size={20} />
+            <span>Following</span>
+          </Link>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setShowAuthModal(true)}
+            className="mobile-nav-item"
+            style={{ background: 'none', border: 'none', cursor: 'pointer' }}
+          >
+            <Users size={20} />
+            <span>Following</span>
+          </button>
+        )}
+
+        <Link href="/new-story" className="mobile-nav-item" style={{ overflow: 'visible' }}>
+          <div className="mobile-nav-write-btn">
+            <PenSquare size={20} />
+          </div>
+          <span style={{ marginTop: '2px' }}>Write</span>
+        </Link>
+
+        {user ? (
+          <Link href={`/profile/${user.username}`} className={`mobile-nav-item ${pathname.startsWith('/profile') ? 'active' : ''}`}>
+            <UserIcon size={20} />
+            <span>Profile</span>
+          </Link>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setShowAuthModal(true)}
+            className="mobile-nav-item"
+            style={{ background: 'none', border: 'none', cursor: 'pointer' }}
+          >
+            <UserIcon size={20} />
+            <span>Sign In</span>
+          </button>
+        )}
+      </nav>
 
       {/* Modals */}
       {showAuthModal && <AuthModal onClose={() => setShowAuthModal(false)} />}
