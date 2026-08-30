@@ -1,9 +1,6 @@
 /**
  * StoryBabe Transactional Email Service
- * Supports:
- * 1. Gmail SMTP (100% Free with Google App Password - no custom domain needed)
- * 2. Resend API (via RESEND_API_KEY)
- * 3. Automatic development console fallback
+ * Production SMTP with Connection Pooling & Fast Dispatch
  */
 
 // @ts-ignore
@@ -14,6 +11,32 @@ interface SendOtpOptions {
   code: string;
   type: 'REGISTRATION' | 'PASSWORD_RESET';
   displayName?: string;
+}
+
+// Cached SMTP transporter singleton
+let cachedTransporter: any = null;
+
+function getTransporter(user: string, pass: string) {
+  if (cachedTransporter) return cachedTransporter;
+
+  cachedTransporter = nodemailer.createTransport({
+    service: 'gmail',
+    host: 'smtp.gmail.com',
+    port: 465,
+    secure: true,
+    auth: {
+      user,
+      pass
+    },
+    pool: true,
+    maxConnections: 5,
+    maxMessages: 100,
+    connectionTimeout: 10000,
+    greetingTimeout: 10000,
+    socketTimeout: 15000
+  });
+
+  return cachedTransporter;
 }
 
 export async function sendOtpEmail(options: SendOtpOptions): Promise<{ success: boolean; isDevFallback?: boolean; error?: string }> {
@@ -121,24 +144,13 @@ export async function sendOtpEmail(options: SendOtpOptions): Promise<{ success: 
 </html>
   `.trim();
 
-  // 1. Option A: Gmail SMTP / Custom SMTP
-  const smtpUser = (process.env.SMTP_USER || process.env.GMAIL_USER || '').trim();
-  const smtpPass = (process.env.SMTP_PASS || process.env.GMAIL_APP_PASSWORD || '').replace(/\s+/g, '');
+  // 1. Primary: Gmail SMTP / Custom SMTP (100% Free - Sends to ANY recipient)
+  const smtpUser = (process.env.SMTP_USER || process.env.GMAIL_USER || '').trim().toLowerCase();
+  const smtpPass = (process.env.SMTP_PASS || process.env.GMAIL_APP_PASSWORD || '').replace(/[^a-zA-Z0-9]/g, '');
 
   if (smtpUser && smtpPass) {
     try {
-      const transporter = nodemailer.createTransport({
-        host: 'smtp.gmail.com',
-        port: 465,
-        secure: true,
-        auth: {
-          user: smtpUser,
-          pass: smtpPass
-        },
-        connectionTimeout: 10000,
-        greetingTimeout: 10000,
-        socketTimeout: 10000
-      });
+      const transporter = getTransporter(smtpUser, smtpPass);
 
       const info = await transporter.sendMail({
         from: `StoryBabe <${smtpUser}>`,
@@ -147,20 +159,42 @@ export async function sendOtpEmail(options: SendOtpOptions): Promise<{ success: 
         html: htmlContent
       });
 
-      console.log(`[Gmail SMTP] OTP email sent successfully to ${to} (${type}) - MsgId: ${info.messageId}`);
+      console.log(`[Gmail SMTP] OTP email sent successfully to ${to} (${type}) - MessageId: ${info.messageId}`);
       return { success: true };
     } catch (err: any) {
       console.error('[Gmail SMTP Delivery Error]:', err.message);
-      if (process.env.NODE_ENV === 'production') {
-        return {
-          success: false,
-          error: `Failed to deliver email via Gmail SMTP: ${err.message}. Please verify your Google App Password.`
-        };
+      // Reset transporter cache on failure so next attempt rebuilds connection
+      cachedTransporter = null;
+
+      // Try non-pooled fallback on port 587
+      try {
+        const fallbackTransporter = nodemailer.createTransport({
+          host: 'smtp.gmail.com',
+          port: 587,
+          secure: false,
+          auth: { user: smtpUser, pass: smtpPass }
+        });
+        const info = await fallbackTransporter.sendMail({
+          from: `StoryBabe <${smtpUser}>`,
+          to,
+          subject,
+          html: htmlContent
+        });
+        console.log(`[Gmail SMTP Fallback] OTP email sent to ${to} (${type}) - MessageId: ${info.messageId}`);
+        return { success: true };
+      } catch (fallbackErr: any) {
+        console.error('[Gmail SMTP Fallback Error]:', fallbackErr.message);
+        if (process.env.NODE_ENV === 'production') {
+          return {
+            success: false,
+            error: `Failed to deliver email via Gmail SMTP: ${err.message}. Please verify your Google App Password in Render.`
+          };
+        }
       }
     }
   }
 
-  // 2. Option B: Resend API (when RESEND_API_KEY is configured)
+  // 2. Secondary: Resend API (when RESEND_API_KEY is configured)
   const apiKey = (process.env.RESEND_API_KEY || '').trim();
   const fromEmail = (process.env.RESEND_FROM_EMAIL || 'StoryBabe <onboarding@resend.dev>').trim();
 
@@ -206,11 +240,11 @@ export async function sendOtpEmail(options: SendOtpOptions): Promise<{ success: 
     }
   }
 
-  // 3. Option C: Development / Local Testing Fallback
+  // 3. Fallback for Local Development (when no credentials exist)
   if (process.env.NODE_ENV === 'production') {
     return {
       success: false,
-      error: 'No email service configured on server. Please set SMTP_USER and SMTP_PASS (Google App Password) or RESEND_API_KEY in Render environment variables.'
+      error: 'No email service configured on server. Please set SMTP_USER and SMTP_PASS (Google App Password) in Render environment variables.'
     };
   }
 
