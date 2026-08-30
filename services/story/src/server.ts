@@ -329,6 +329,67 @@ app.get('/stories', async (req: any, res: any): Promise<void> => {
   }
 });
 
+// Active Authors (authors with recent stories)
+app.get('/stories/active-authors', async (req: any, res: any): Promise<void> => {
+  try {
+    const stories = await prisma.story.findMany({
+      where: { isUnpublished: false },
+      orderBy: { createdAt: 'desc' },
+      take: 30
+    });
+
+    const authorMap = new Map<string, any>();
+    for (const story of stories) {
+      if (story.author && !authorMap.has(story.author.id)) {
+        authorMap.set(story.author.id, {
+          id: story.author.id,
+          username: story.author.username,
+          displayName: story.author.displayName,
+          bio: story.author.bio,
+          avatarUrl: story.author.avatarUrl,
+          latestStoryId: story.id,
+          latestStoryTitle: story.title
+        });
+      }
+    }
+
+    res.json({
+      success: true,
+      data: Array.from(authorMap.values()).slice(0, 10)
+    });
+  } catch (error: any) {
+    console.error('Active authors error:', error);
+    res.status(500).json({ success: false, error: { code: 'SERVER_ERROR', message: 'Failed to fetch active authors' } });
+  }
+});
+
+// Safety Resources Helpline Directory
+app.get('/safety-resources', (req: any, res: any): void => {
+  res.json({
+    success: true,
+    data: [
+      {
+        id: 'sr-1',
+        title: 'Crisis Text Line',
+        description: 'Free, 24/7 support for those in crisis. Text HOME to 741741.',
+        url: 'https://www.crisistextline.org'
+      },
+      {
+        id: 'sr-2',
+        title: '988 Suicide & Crisis Lifeline',
+        description: 'Free and confidential support for people in distress, prevention and crisis resources.',
+        url: 'https://988lifeline.org'
+      },
+      {
+        id: 'sr-3',
+        title: 'SAMHSA National Helpline',
+        description: '24/7 treatment referral and information service for mental health and substance use disorders: 1-800-662-4357.',
+        url: 'https://www.samhsa.gov/find-help/national-helpline'
+      }
+    ]
+  });
+});
+
 // Get Single Story by ID
 app.get('/stories/:id', async (req: any, res: any): Promise<void> => {
   try {

@@ -1,0 +1,3 @@
+# StoryBabe Robots.txt
+User-agent: *
+Allow: /
