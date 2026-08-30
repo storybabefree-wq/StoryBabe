@@ -158,6 +158,8 @@ export interface UserProfile {
   usernameChangesCount: number;
   canChangeUsername: boolean;
   daysUntilNextUsernameChange: number;
+  emailVerified: boolean;
+  emailVerifiedAt?: string | null;
   createdAt: string;
 }
 
@@ -185,6 +187,25 @@ export interface AuthTokens {
 export interface AuthResponse {
   user: AuthUser;
   tokens: AuthTokens;
+}
+
+export type OtpVerificationType = 'REGISTRATION' | 'PASSWORD_RESET';
+
+export interface OtpVerification {
+  id: string;
+  email: string;
+  type: OtpVerificationType;
+  expiresAt: string;
+  attempts: number;
+  verified: boolean;
+  createdAt: string;
+}
+
+export interface SendOtpResponse {
+  email: string;
+  expiresInSeconds: number;
+  devOtp?: string; // only provided in development/testing mode
+  message: string;
 }
 
 export interface Story {

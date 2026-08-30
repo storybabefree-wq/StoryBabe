@@ -671,7 +671,7 @@ export default function NewStoryPage() {
               Themes & Mood Tags
             </label>
             <p style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', marginBottom: '0.75rem' }}>
-              Comma-separated themes (e.g. breakup, 3am thoughts, grief, growth, career, solitude).
+              Comma-separated themes (e.g. reflection, recovery, family, grief, growth, career, solitude).
             </p>
             <input
               type="text"

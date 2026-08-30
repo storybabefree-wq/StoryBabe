@@ -122,6 +122,78 @@ describe('StoryBabe Microservices Architecture & Rules E2E Suite', () => {
     assert.strictEqual(secondChangeRes.data.error.code, 'USERNAME_COOLDOWN_ACTIVE');
   });
 
+  it('3b. Auth Service: 6-Digit OTP Email Verification Flow & Password Reset', async () => {
+    const uniqueSuffix = Date.now();
+    const otpEmail = `otp_author_${uniqueSuffix}@example.com`;
+    const otpUsername = `otp_author_${uniqueSuffix}`;
+
+    // Step 1: Send registration OTP
+    const sendOtpRes = await fetchJson('/auth/register/send-otp', {
+      method: 'POST',
+      body: JSON.stringify({
+        email: otpEmail,
+        username: otpUsername,
+        displayName: 'OTP Verified Author',
+        password: 'SecurePassword123'
+      })
+    });
+
+    assert.strictEqual(sendOtpRes.status, 200);
+    assert.strictEqual(sendOtpRes.data.success, true);
+    assert.ok(sendOtpRes.data.data.devOtp, 'Development OTP should be returned in test/dev mode');
+    const registrationCode = sendOtpRes.data.data.devOtp;
+
+    // Step 2: Verify registration OTP & create user
+    const verifyOtpRes = await fetchJson('/auth/register/verify-otp', {
+      method: 'POST',
+      body: JSON.stringify({
+        email: otpEmail,
+        code: registrationCode
+      })
+    });
+
+    assert.strictEqual(verifyOtpRes.status, 201);
+    assert.strictEqual(verifyOtpRes.data.success, true);
+    assert.strictEqual(verifyOtpRes.data.data.user.emailVerified, true);
+    assert.ok(verifyOtpRes.data.data.tokens.accessToken);
+
+    // Step 3: Request forgot password OTP
+    const forgotOtpRes = await fetchJson('/auth/forgot-password/send-otp', {
+      method: 'POST',
+      body: JSON.stringify({ email: otpEmail })
+    });
+
+    assert.strictEqual(forgotOtpRes.status, 200);
+    assert.strictEqual(forgotOtpRes.data.success, true);
+    const resetCode = forgotOtpRes.data.data.devOtp;
+
+    // Step 4: Reset password with code
+    const resetRes = await fetchJson('/auth/forgot-password/reset', {
+      method: 'POST',
+      body: JSON.stringify({
+        email: otpEmail,
+        code: resetCode,
+        newPassword: 'BrandNewPassword456'
+      })
+    });
+
+    assert.strictEqual(resetRes.status, 200);
+    assert.strictEqual(resetRes.data.success, true);
+
+    // Step 5: Verify login with new password
+    const newLoginRes = await fetchJson('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({
+        emailOrUsername: otpEmail,
+        password: 'BrandNewPassword456'
+      })
+    });
+
+    assert.strictEqual(newLoginRes.status, 200);
+    assert.strictEqual(newLoginRes.data.success, true);
+    assert.strictEqual(newLoginRes.data.data.user.emailVerified, true);
+  });
+
   let createdStoryId = '';
 
   it('4. Story Service: AI Poster Generator and Active Authors Tray endpoints', async () => {

@@ -10,7 +10,7 @@ const services = [
   { name: 'GATEWAY   ', path: 'apps/gateway/dist/server.js', port: 4000 }
 ];
 
-console.log('🚀 Starting StoryBabe Microservices Network...');
+console.log('Starting StoryBabe Microservices Network...');
 
 const procs = [];
 
@@ -30,7 +30,7 @@ for (const svc of services) {
 
 // Start Next.js Web App
 const nextBin = path.resolve(process.cwd(), 'node_modules/.bun/node_modules/next/dist/bin/next');
-console.log('🌐 Starting StoryBabe Next.js Web Application...');
+console.log('Starting StoryBabe Next.js Web Application...');
 const webProc = spawn('node', [nextBin, 'dev', 'apps/web', '-p', '3000'], {
   stdio: 'inherit',
   env: { ...process.env, NEXT_PUBLIC_API_URL: 'http://127.0.0.1:4000/api/v1' }

@@ -16,12 +16,36 @@ import type {
   UserRole
 } from '@storybabe/types';
 
-// Ensure database directory exists within the workspace
-const dbDir = path.resolve(process.cwd(), 'data');
-if (!fs.existsSync(dbDir)) {
-  fs.mkdirSync(dbDir, { recursive: true });
+// Robust workspace root discovery for persistent database access across microservices
+function findWorkspaceDataDir(): string {
+  if (process.env.DATABASE_FILE_PATH) {
+    const customDir = path.dirname(process.env.DATABASE_FILE_PATH);
+    if (!fs.existsSync(customDir)) fs.mkdirSync(customDir, { recursive: true });
+    return customDir;
+  }
+  let current = process.cwd();
+  for (let i = 0; i < 6; i++) {
+    const candidate = path.join(current, 'data');
+    if (
+      fs.existsSync(path.join(current, 'bun.lock')) ||
+      (fs.existsSync(path.join(current, 'package.json')) && fs.existsSync(path.join(current, 'services')))
+    ) {
+      if (!fs.existsSync(candidate)) {
+        fs.mkdirSync(candidate, { recursive: true });
+      }
+      return candidate;
+    }
+    const parent = path.dirname(current);
+    if (parent === current) break;
+    current = parent;
+  }
+  const fallback = path.resolve(process.cwd(), 'data');
+  if (!fs.existsSync(fallback)) fs.mkdirSync(fallback, { recursive: true });
+  return fallback;
 }
-const dbPath = path.join(dbDir, 'storybabe.db');
+
+const dbDir = findWorkspaceDataDir();
+const dbPath = process.env.DATABASE_FILE_PATH || path.join(dbDir, 'storybabe.db');
 
 export const db = new DatabaseSync(dbPath);
 
@@ -48,8 +72,22 @@ try {
       role TEXT DEFAULT 'AUTHOR',
       lastUsernameChangeAt TEXT,
       usernameChangesCount INTEGER DEFAULT 0,
+      emailVerified INTEGER DEFAULT 0,
+      emailVerifiedAt TEXT,
       createdAt TEXT NOT NULL,
       updatedAt TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS otp_verifications (
+      id TEXT PRIMARY KEY,
+      email TEXT NOT NULL,
+      code TEXT NOT NULL,
+      type TEXT NOT NULL,
+      payload TEXT,
+      expiresAt TEXT NOT NULL,
+      attempts INTEGER DEFAULT 0,
+      verified INTEGER DEFAULT 0,
+      createdAt TEXT NOT NULL
     );
 
     CREATE TABLE IF NOT EXISTS username_history (
@@ -242,19 +280,28 @@ try {
 
 // Safe migrations for existing SQLite database using PRAGMA table_info
 try {
-  const tableInfo = db.prepare("PRAGMA table_info(stories)").all() as any[];
-  const cols = new Set(tableInfo.map((c) => c.name));
-  if (!cols.has('oneliner')) {
+  const storyTableInfo = db.prepare("PRAGMA table_info(stories)").all() as any[];
+  const storyCols = new Set(storyTableInfo.map((c) => c.name));
+  if (!storyCols.has('oneliner')) {
     db.exec('ALTER TABLE stories ADD COLUMN oneliner TEXT');
   }
-  if (!cols.has('posterUrl')) {
+  if (!storyCols.has('posterUrl')) {
     db.exec('ALTER TABLE stories ADD COLUMN posterUrl TEXT');
   }
-  if (!cols.has('posterStyle')) {
+  if (!storyCols.has('posterStyle')) {
     db.exec("ALTER TABLE stories ADD COLUMN posterStyle TEXT DEFAULT 'bottom-gradient'");
   }
-  if (!cols.has('posterType')) {
+  if (!storyCols.has('posterType')) {
     db.exec("ALTER TABLE stories ADD COLUMN posterType TEXT DEFAULT 'PRESET'");
+  }
+
+  const userTableInfo = db.prepare("PRAGMA table_info(users)").all() as any[];
+  const userCols = new Set(userTableInfo.map((c) => c.name));
+  if (!userCols.has('emailVerified')) {
+    db.exec('ALTER TABLE users ADD COLUMN emailVerified INTEGER DEFAULT 0');
+  }
+  if (!userCols.has('emailVerifiedAt')) {
+    db.exec('ALTER TABLE users ADD COLUMN emailVerifiedAt TEXT');
   }
 } catch (e) {
   // Migration already handled
@@ -279,6 +326,8 @@ try {
     role: 'AUTHOR',
     lastUsernameChangeAt: thirtyFiveDaysAgo,
     usernameChangesCount: 1,
+    emailVerified: 1,
+    emailVerifiedAt: thirtyFiveDaysAgo,
     createdAt: thirtyFiveDaysAgo,
     updatedAt: nowIso
   };
@@ -293,6 +342,8 @@ try {
     role: 'AUTHOR',
     lastUsernameChangeAt: fiveDaysAgo,
     usernameChangesCount: 1,
+    emailVerified: 1,
+    emailVerifiedAt: fiveDaysAgo,
     createdAt: fiveDaysAgo,
     updatedAt: nowIso
   };
@@ -307,6 +358,8 @@ try {
     role: 'AUTHOR',
     lastUsernameChangeAt: null,
     usernameChangesCount: 0,
+    emailVerified: 1,
+    emailVerifiedAt: thirtyFiveDaysAgo,
     createdAt: thirtyFiveDaysAgo,
     updatedAt: nowIso
   };
@@ -321,19 +374,21 @@ try {
     role: 'ADMIN',
     lastUsernameChangeAt: null,
     usernameChangesCount: 0,
+    emailVerified: 1,
+    emailVerifiedAt: thirtyFiveDaysAgo,
     createdAt: thirtyFiveDaysAgo,
     updatedAt: nowIso
   };
 
   const insertUser = db.prepare(`
-    INSERT OR IGNORE INTO users (id, email, username, displayName, passwordHash, bio, role, lastUsernameChangeAt, usernameChangesCount, createdAt, updatedAt)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT OR IGNORE INTO users (id, email, username, displayName, passwordHash, bio, role, lastUsernameChangeAt, usernameChangesCount, emailVerified, emailVerifiedAt, createdAt, updatedAt)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
-  insertUser.run(uElena.id, uElena.email, uElena.username, uElena.displayName, uElena.passwordHash, uElena.bio, uElena.role, uElena.lastUsernameChangeAt, uElena.usernameChangesCount, uElena.createdAt, uElena.updatedAt);
-  insertUser.run(uMarcus.id, uMarcus.email, uMarcus.username, uMarcus.displayName, uMarcus.passwordHash, uMarcus.bio, uMarcus.role, uMarcus.lastUsernameChangeAt, uMarcus.usernameChangesCount, uMarcus.createdAt, uMarcus.updatedAt);
-  insertUser.run(uSarah.id, uSarah.email, uSarah.username, uSarah.displayName, uSarah.passwordHash, uSarah.bio, uSarah.role, uSarah.lastUsernameChangeAt, uSarah.usernameChangesCount, uSarah.createdAt, uSarah.updatedAt);
-  insertUser.run(uMod.id, uMod.email, uMod.username, uMod.displayName, uMod.passwordHash, uMod.bio, uMod.role, uMod.lastUsernameChangeAt, uMod.usernameChangesCount, uMod.createdAt, uMod.updatedAt);
+  insertUser.run(uElena.id, uElena.email, uElena.username, uElena.displayName, uElena.passwordHash, uElena.bio, uElena.role, uElena.lastUsernameChangeAt, uElena.usernameChangesCount, uElena.emailVerified, uElena.emailVerifiedAt, uElena.createdAt, uElena.updatedAt);
+  insertUser.run(uMarcus.id, uMarcus.email, uMarcus.username, uMarcus.displayName, uMarcus.passwordHash, uMarcus.bio, uMarcus.role, uMarcus.lastUsernameChangeAt, uMarcus.usernameChangesCount, uMarcus.emailVerified, uMarcus.emailVerifiedAt, uMarcus.createdAt, uMarcus.updatedAt);
+  insertUser.run(uSarah.id, uSarah.email, uSarah.username, uSarah.displayName, uSarah.passwordHash, uSarah.bio, uSarah.role, uSarah.lastUsernameChangeAt, uSarah.usernameChangesCount, uSarah.emailVerified, uSarah.emailVerifiedAt, uSarah.createdAt, uSarah.updatedAt);
+  insertUser.run(uMod.id, uMod.email, uMod.username, uMod.displayName, uMod.passwordHash, uMod.bio, uMod.role, uMod.lastUsernameChangeAt, uMod.usernameChangesCount, uMod.emailVerified, uMod.emailVerifiedAt, uMod.createdAt, uMod.updatedAt);
 
   // Follows
   const insertFollow = db.prepare('INSERT OR IGNORE INTO follows (id, followerId, followingId, createdAt) VALUES (?, ?, ?, ?)');
@@ -348,8 +403,8 @@ try {
   insertTag.run('tag-3', 'recovery');
   insertTag.run('tag-4', 'career');
   insertTag.run('tag-5', 'growth');
-  insertTag.run('tag-6', '3am thoughts');
-  insertTag.run('tag-7', 'breakup');
+  insertTag.run('tag-6', 'reflection');
+  insertTag.run('tag-7', 'relationships');
 
   // Stories
   const insertStory = db.prepare(`
@@ -646,6 +701,8 @@ export const prisma = {
 
       return {
         ...row,
+        emailVerified: Boolean(row.emailVerified),
+        emailVerifiedAt: row.emailVerifiedAt ? new Date(row.emailVerifiedAt).toISOString() : null,
         _count: {
           followers: followersCount,
           following: followingCount,
@@ -674,8 +731,8 @@ export const prisma = {
       const id = data.id || crypto.randomUUID();
       const now = new Date().toISOString();
       db.prepare(`
-        INSERT INTO users (id, email, username, displayName, passwordHash, bio, avatarUrl, role, lastUsernameChangeAt, usernameChangesCount, createdAt, updatedAt)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO users (id, email, username, displayName, passwordHash, bio, avatarUrl, role, lastUsernameChangeAt, usernameChangesCount, emailVerified, emailVerifiedAt, createdAt, updatedAt)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         id,
         data.email.toLowerCase(),
@@ -687,6 +744,8 @@ export const prisma = {
         data.role || 'AUTHOR',
         data.lastUsernameChangeAt || null,
         data.usernameChangesCount || 0,
+        data.emailVerified ? 1 : 0,
+        data.emailVerifiedAt ? new Date(data.emailVerifiedAt).toISOString() : (data.emailVerified ? now : null),
         now,
         now
       );
@@ -702,13 +761,16 @@ export const prisma = {
       const newDisplayName = data.displayName !== undefined ? data.displayName : current.displayName;
       const newBio = data.bio !== undefined ? data.bio : current.bio;
       const newAvatarUrl = data.avatarUrl !== undefined ? data.avatarUrl : current.avatarUrl;
+      const newPasswordHash = data.passwordHash !== undefined ? data.passwordHash : current.passwordHash;
+      const newEmailVerified = data.emailVerified !== undefined ? (data.emailVerified ? 1 : 0) : current.emailVerified;
+      const newEmailVerifiedAt = data.emailVerifiedAt !== undefined ? (data.emailVerifiedAt ? new Date(data.emailVerifiedAt).toISOString() : null) : current.emailVerifiedAt;
       const newLastChange = data.lastUsernameChangeAt !== undefined ? (data.lastUsernameChangeAt ? new Date(data.lastUsernameChangeAt).toISOString() : null) : current.lastUsernameChangeAt;
       const newChangeCount = data.usernameChangesCount?.increment !== undefined ? current.usernameChangesCount + 1 : (data.usernameChangesCount !== undefined ? data.usernameChangesCount : current.usernameChangesCount);
 
       db.prepare(`
-        UPDATE users SET username = ?, displayName = ?, bio = ?, avatarUrl = ?, lastUsernameChangeAt = ?, usernameChangesCount = ?, updatedAt = ?
+        UPDATE users SET username = ?, displayName = ?, bio = ?, avatarUrl = ?, passwordHash = ?, emailVerified = ?, emailVerifiedAt = ?, lastUsernameChangeAt = ?, usernameChangesCount = ?, updatedAt = ?
         WHERE id = ?
-      `).run(newUsername, newDisplayName, newBio, newAvatarUrl, newLastChange, newChangeCount, now, where.id);
+      `).run(newUsername, newDisplayName, newBio, newAvatarUrl, newPasswordHash, newEmailVerified, newEmailVerifiedAt, newLastChange, newChangeCount, now, where.id);
 
       return prisma.user.findUnique({ where: { id: where.id } });
     },
@@ -716,6 +778,98 @@ export const prisma = {
     count: async ({ where }: { where?: any } = {}) => {
       const res = db.prepare('SELECT COUNT(*) as c FROM users').get() as any;
       return res.c;
+    }
+  },
+
+  otpVerification: {
+    create: async ({ data }: { data: any }) => {
+      const id = data.id || crypto.randomUUID();
+      const now = new Date().toISOString();
+      db.prepare(`
+        INSERT INTO otp_verifications (id, email, code, type, payload, expiresAt, attempts, verified, createdAt)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        id,
+        data.email.toLowerCase(),
+        data.code,
+        data.type,
+        data.payload || null,
+        new Date(data.expiresAt).toISOString(),
+        data.attempts || 0,
+        data.verified ? 1 : 0,
+        now
+      );
+      return prisma.otpVerification.findUnique({ where: { id } });
+    },
+
+    findUnique: async ({ where }: { where: { id: string } }) => {
+      const row = db.prepare('SELECT * FROM otp_verifications WHERE id = ?').get(where.id) as any;
+      if (!row) return null;
+      return {
+        ...row,
+        verified: Boolean(row.verified)
+      };
+    },
+
+    findFirst: async ({ where }: any) => {
+      let query = 'SELECT * FROM otp_verifications WHERE 1=1';
+      const params: any[] = [];
+      if (where.email) {
+        query += ' AND LOWER(email) = LOWER(?)';
+        params.push(where.email);
+      }
+      if (where.type) {
+        query += ' AND type = ?';
+        params.push(where.type);
+      }
+      if (where.code) {
+        query += ' AND code = ?';
+        params.push(where.code);
+      }
+      if (where.verified !== undefined) {
+        query += ' AND verified = ?';
+        params.push(where.verified ? 1 : 0);
+      }
+      query += ' ORDER BY createdAt DESC LIMIT 1';
+      const row = db.prepare(query).get(...params) as any;
+      if (!row) return null;
+      return {
+        ...row,
+        verified: Boolean(row.verified)
+      };
+    },
+
+    update: async ({ where, data }: { where: { id: string }; data: any }) => {
+      const current = db.prepare('SELECT * FROM otp_verifications WHERE id = ?').get(where.id) as any;
+      if (!current) throw new Error('OTP verification not found');
+
+      let newAttempts = current.attempts;
+      if (data.attempts?.increment) newAttempts += data.attempts.increment;
+      else if (data.attempts !== undefined) newAttempts = data.attempts;
+
+      const newVerified = data.verified !== undefined ? (data.verified ? 1 : 0) : current.verified;
+
+      db.prepare('UPDATE otp_verifications SET attempts = ?, verified = ? WHERE id = ?').run(
+        newAttempts,
+        newVerified,
+        where.id
+      );
+
+      return prisma.otpVerification.findUnique({ where: { id: where.id } });
+    },
+
+    deleteMany: async ({ where }: any) => {
+      let query = 'DELETE FROM otp_verifications WHERE 1=1';
+      const params: any[] = [];
+      if (where.email) {
+        query += ' AND LOWER(email) = LOWER(?)';
+        params.push(where.email);
+      }
+      if (where.type) {
+        query += ' AND type = ?';
+        params.push(where.type);
+      }
+      db.prepare(query).run(...params);
     }
   },
 
@@ -1387,6 +1541,8 @@ export function formatUserProfile(
     usernameChangesCount: user.usernameChangesCount || 0,
     canChangeUsername,
     daysUntilNextUsernameChange,
+    emailVerified: Boolean(user.emailVerified),
+    emailVerifiedAt: user.emailVerifiedAt ? new Date(user.emailVerifiedAt).toISOString() : null,
     createdAt: new Date(user.createdAt).toISOString()
   };
 }

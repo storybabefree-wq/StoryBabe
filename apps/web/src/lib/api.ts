@@ -7,7 +7,8 @@ import type {
   Comment,
   UserProfile,
   Report,
-  StoryFilterParams
+  StoryFilterParams,
+  SendOtpResponse
 } from '@storybabe/types';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api/v1';
@@ -58,6 +59,16 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
 export const api = {
   // Auth
   auth: {
+    sendRegisterOtp: (body: { email: string; username: string; displayName: string; password: string }) =>
+      request<ApiResponse<SendOtpResponse>>('/auth/register/send-otp', { method: 'POST', body: JSON.stringify(body) }),
+    verifyRegisterOtp: (body: { email: string; code: string }) =>
+      request<ApiResponse<AuthResponse>>('/auth/register/verify-otp', { method: 'POST', body: JSON.stringify(body) }),
+    sendForgotPasswordOtp: (email: string) =>
+      request<ApiResponse<SendOtpResponse>>('/auth/forgot-password/send-otp', { method: 'POST', body: JSON.stringify({ email }) }),
+    resetPassword: (body: { email: string; code: string; newPassword: string }) =>
+      request<ApiResponse<any>>('/auth/forgot-password/reset', { method: 'POST', body: JSON.stringify(body) }),
+    resendOtp: (body: { email: string; type: 'REGISTRATION' | 'PASSWORD_RESET' }) =>
+      request<ApiResponse<SendOtpResponse>>('/auth/resend-otp', { method: 'POST', body: JSON.stringify(body) }),
     register: (body: any) => request<ApiResponse<AuthResponse>>('/auth/register', { method: 'POST', body: JSON.stringify(body) }),
     login: (body: any) => request<ApiResponse<AuthResponse>>('/auth/login', { method: 'POST', body: JSON.stringify(body) }),
     getMe: () => request<ApiResponse<AuthUser>>('/auth/me'),

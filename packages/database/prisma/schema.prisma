@@ -18,6 +18,8 @@ model User {
   role                  String            @default("AUTHOR") // READER, AUTHOR, MODERATOR, ADMIN
   lastUsernameChangeAt  DateTime?
   usernameChangesCount  Int               @default(0)
+  emailVerified         Boolean           @default(false)
+  emailVerifiedAt       DateTime?
   createdAt             DateTime          @default(now())
   updatedAt             DateTime          @updatedAt
 
@@ -39,6 +41,22 @@ model User {
 
   @@index([username])
   @@index([email])
+}
+
+model OtpVerification {
+  id        String   @id @default(uuid())
+  email     String
+  code      String
+  type      String   // REGISTRATION, PASSWORD_RESET
+  payload   String?  // JSON string
+  expiresAt DateTime
+  attempts  Int      @default(0)
+  verified  Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([email])
+  @@index([code])
+  @@index([type])
 }
 
 model UsernameHistory {

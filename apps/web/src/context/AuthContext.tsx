@@ -1,7 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import type { AuthUser } from '@storybabe/types';
+import type { AuthUser, SendOtpResponse } from '@storybabe/types';
 import { api, setToken } from '../lib/api';
 
 interface AuthContextType {
@@ -11,6 +11,11 @@ interface AuthContextType {
   toggleTheme: () => void;
   login: (emailOrUsername: string, password: string) => Promise<void>;
   register: (data: { email: string; username: string; displayName: string; password: string }) => Promise<void>;
+  sendRegisterOtp: (data: { email: string; username: string; displayName: string; password: string }) => Promise<SendOtpResponse>;
+  verifyRegisterOtp: (data: { email: string; code: string }) => Promise<void>;
+  sendForgotPasswordOtp: (email: string) => Promise<SendOtpResponse>;
+  resetPassword: (data: { email: string; code: string; newPassword: string }) => Promise<void>;
+  resendOtp: (data: { email: string; type: 'REGISTRATION' | 'PASSWORD_RESET' }) => Promise<SendOtpResponse>;
   logout: () => void;
   refreshUser: () => Promise<void>;
 }
@@ -74,6 +79,60 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const sendRegisterOtp = async (data: { email: string; username: string; displayName: string; password: string }): Promise<SendOtpResponse> => {
+    const res = await api.auth.sendRegisterOtp({
+      email: data.email.trim().toLowerCase(),
+      username: data.username.trim().toLowerCase(),
+      displayName: data.displayName.trim(),
+      password: data.password
+    });
+    if (res.success && res.data) {
+      return res.data;
+    }
+    throw new Error(res.error?.message || 'Failed to send verification code');
+  };
+
+  const verifyRegisterOtp = async (data: { email: string; code: string }) => {
+    const res = await api.auth.verifyRegisterOtp({
+      email: data.email.trim().toLowerCase(),
+      code: data.code.trim()
+    });
+    if (res.success && res.data) {
+      setToken(res.data.tokens.accessToken);
+      setUser(res.data.user);
+    }
+  };
+
+  const sendForgotPasswordOtp = async (email: string): Promise<SendOtpResponse> => {
+    const res = await api.auth.sendForgotPasswordOtp(email.trim().toLowerCase());
+    if (res.success && res.data) {
+      return res.data;
+    }
+    throw new Error(res.error?.message || 'Failed to send password reset code');
+  };
+
+  const resetPassword = async (data: { email: string; code: string; newPassword: string }) => {
+    const res = await api.auth.resetPassword({
+      email: data.email.trim().toLowerCase(),
+      code: data.code.trim(),
+      newPassword: data.newPassword
+    });
+    if (!res.success) {
+      throw new Error(res.error?.message || 'Failed to reset password');
+    }
+  };
+
+  const resendOtp = async (data: { email: string; type: 'REGISTRATION' | 'PASSWORD_RESET' }): Promise<SendOtpResponse> => {
+    const res = await api.auth.resendOtp({
+      email: data.email.trim().toLowerCase(),
+      type: data.type
+    });
+    if (res.success && res.data) {
+      return res.data;
+    }
+    throw new Error(res.error?.message || 'Failed to resend code');
+  };
+
   const logout = () => {
     setToken(null);
     setUser(null);
@@ -88,6 +147,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         toggleTheme,
         login,
         register,
+        sendRegisterOtp,
+        verifyRegisterOtp,
+        sendForgotPasswordOtp,
+        resetPassword,
+        resendOtp,
         logout,
         refreshUser
       }}

@@ -86,23 +86,100 @@ export function requireRole(...allowedRoles: UserRole[]) {
   };
 }
 
+import crypto from 'crypto';
+
+export function generateOtpCode(): string {
+  return crypto.randomInt(100000, 999999).toString();
+}
+
 // Zod Validation Schemas
-export const registerSchema = z.object({
-  email: z.string().email('Invalid email address'),
+export const emailSchema = z
+  .string()
+  .trim()
+  .min(5, 'Email is required')
+  .max(100, 'Email cannot exceed 100 characters')
+  .email('Please enter a valid email address')
+  .refine((val) => {
+    const parts = val.split('@');
+    if (parts.length !== 2) return false;
+    const domain = parts[1];
+    const domainParts = domain.split('.');
+    if (domainParts.length < 2) return false;
+    const tld = domainParts[domainParts.length - 1];
+    return tld.length >= 2 && !domain.includes(' ');
+  }, 'Please enter a valid email address with a valid domain extension');
+
+export const sendRegisterOtpSchema = z.object({
+  email: emailSchema,
   username: z
     .string()
+    .trim()
     .min(3, 'Username must be at least 3 characters')
     .max(30, 'Username cannot exceed 30 characters')
     .regex(/^[a-zA-Z0-9_]+$/, 'Username can only contain letters, numbers, and underscores'),
   displayName: z
     .string()
+    .trim()
     .min(1, 'Display name cannot be empty')
     .max(50, 'Display name cannot exceed 50 characters'),
-  password: z.string().min(8, 'Password must be at least 8 characters')
+  password: z
+    .string()
+    .min(8, 'Password must be at least 8 characters')
+    .regex(/^(?=.*[A-Za-z])(?=.*\d).+$/, 'Password must contain at least one letter and one number')
+});
+
+export const verifyRegisterOtpSchema = z.object({
+  email: emailSchema,
+  code: z
+    .string()
+    .trim()
+    .length(6, 'Verification code must be 6 digits')
+    .regex(/^\d{6}$/, 'Verification code must be 6 digits')
+});
+
+export const sendForgotPasswordOtpSchema = z.object({
+  email: emailSchema
+});
+
+export const resetPasswordOtpSchema = z.object({
+  email: emailSchema,
+  code: z
+    .string()
+    .trim()
+    .length(6, 'Verification code must be 6 digits')
+    .regex(/^\d{6}$/, 'Verification code must be 6 digits'),
+  newPassword: z
+    .string()
+    .min(8, 'New password must be at least 8 characters')
+    .regex(/^(?=.*[A-Za-z])(?=.*\d).+$/, 'Password must contain at least one letter and one number')
+});
+
+export const resendOtpSchema = z.object({
+  email: emailSchema,
+  type: z.enum(['REGISTRATION', 'PASSWORD_RESET'])
+});
+
+export const registerSchema = z.object({
+  email: emailSchema,
+  username: z
+    .string()
+    .trim()
+    .min(3, 'Username must be at least 3 characters')
+    .max(30, 'Username cannot exceed 30 characters')
+    .regex(/^[a-zA-Z0-9_]+$/, 'Username can only contain letters, numbers, and underscores'),
+  displayName: z
+    .string()
+    .trim()
+    .min(1, 'Display name cannot be empty')
+    .max(50, 'Display name cannot exceed 50 characters'),
+  password: z
+    .string()
+    .min(8, 'Password must be at least 8 characters')
+    .regex(/^(?=.*[A-Za-z])(?=.*\d).+$/, 'Password must contain at least one letter and one number')
 });
 
 export const loginSchema = z.object({
-  emailOrUsername: z.string().min(1, 'Email or username is required'),
+  emailOrUsername: z.string().trim().min(1, 'Email or username is required'),
   password: z.string().min(1, 'Password is required')
 });
 

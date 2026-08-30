@@ -88,9 +88,9 @@ function extractScenePrompt(title: string = '', summary: string = '', tags: stri
   let mood = 'reflective';
   let visualSubject = 'a quiet window overlooking a misty morning landscape, soft ambient glow';
 
-  if (combined.includes('rehab') || combined.includes('substance') || combined.includes('addict') || combined.includes('night') || combined.includes('3am') || combined.includes('neon')) {
+  if (combined.includes('rehab') || combined.includes('substance') || combined.includes('addict') || combined.includes('night') || combined.includes('midnight') || combined.includes('neon')) {
     mood = 'nocturnal';
-    visualSubject = 'a lone figure walking down a wet city avenue illuminated by faint neon and amber streetlights at 3am, moody atmospheric reflections';
+    visualSubject = 'a lone figure walking down a wet city avenue illuminated by faint neon and amber streetlights at night, moody atmospheric reflections';
   } else if (combined.includes('coast') || combined.includes('sea') || combined.includes('ocean') || combined.includes('alone') || combined.includes('solitude')) {
     mood = 'solitary';
     visualSubject = 'a rocky coastal shoreline shrouded in dense ocean fog, pale blue waters meeting grey sand, melancholic stillness';
