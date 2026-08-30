@@ -1,13 +1,22 @@
-import { spawn } from 'child_process';
+import { spawn, execSync } from 'child_process';
 import path from 'path';
 import fs from 'fs';
+import { createRequire } from 'module';
 import dotenv from 'dotenv';
+
+const require = createRequire(import.meta.url);
 
 // Automatically load StoryBabe.env if present, otherwise .env
 if (fs.existsSync('StoryBabe.env')) {
   dotenv.config({ path: 'StoryBabe.env' });
 } else {
   dotenv.config();
+}
+
+// Check if services are built; if not, build them first
+if (!fs.existsSync('services/auth/dist/server.js')) {
+  console.log('Building TypeScript services before startup...');
+  execSync('npm run build:services', { stdio: 'inherit' });
 }
 
 const services = [
@@ -38,11 +47,19 @@ for (const svc of services) {
 }
 
 // Start Next.js Web App
-const nextBin = path.resolve(process.cwd(), 'node_modules/.bun/node_modules/next/dist/bin/next');
-console.log('Starting StoryBabe Next.js Web Application...');
-const webProc = spawn('node', [nextBin, 'dev', 'apps/web', '-p', '3000'], {
+let nextBin = '';
+try {
+  const nextPkg = require.resolve('next/package.json', { paths: ['apps/web', process.cwd()] });
+  nextBin = path.join(path.dirname(nextPkg), 'dist/bin/next');
+} catch {
+  nextBin = 'next';
+}
+
+console.log('Starting StoryBabe Next.js Web Application on http://localhost:3000 ...');
+const webProc = spawn(process.platform === 'win32' && !nextBin.endsWith('.js') && !nextBin.includes(path.sep) ? 'npx.cmd' : 'node', 
+  nextBin.endsWith('.js') || nextBin.includes(path.sep) ? [nextBin, 'dev', 'apps/web', '-p', '3000'] : ['next', 'dev', 'apps/web', '-p', '3000'], {
   stdio: 'inherit',
-  env: { ...process.env, NEXT_PUBLIC_API_URL: 'http://127.0.0.1:4000/api/v1' }
+  env: { ...process.env, NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:4000/api/v1' }
 });
 
 procs.push(webProc);

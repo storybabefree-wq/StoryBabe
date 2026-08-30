@@ -9,7 +9,8 @@
     "apps/*"
   ],
   "scripts": {
-    "dev": "concurrently -n \"gateway,auth,story,social,mod,worker,web\" -c \"blue,cyan,magenta,yellow,red,green,white\" \"npm run dev -w @storybabe/gateway\" \"npm run dev -w @storybabe/auth-service\" \"npm run dev -w @storybabe/story-service\" \"npm run dev -w @storybabe/social-service\" \"npm run dev -w @storybabe/moderation-service\" \"npm run dev -w @storybabe/worker-service\" \"npm run dev -w @storybabe/web\"",
+    "dev": "node scripts/dev.mjs",
+    "dev:concurrent": "concurrently -n \"gateway,auth,story,social,mod,worker,web\" -c \"blue,cyan,magenta,yellow,red,green,white\" \"npm run dev -w @storybabe/gateway\" \"npm run dev -w @storybabe/auth-service\" \"npm run dev -w @storybabe/story-service\" \"npm run dev -w @storybabe/social-service\" \"npm run dev -w @storybabe/moderation-service\" \"npm run dev -w @storybabe/worker-service\" \"npm run dev -w @storybabe/web\"",
     "db:generate": "npm run db:generate -w @storybabe/database",
     "db:push": "npm run db:push -w @storybabe/database",
     "build": "npm run build -w @storybabe/web",
