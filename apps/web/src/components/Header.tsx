@@ -58,19 +58,9 @@ export default function Header() {
           width: '100%'
         }}
       >
-        <div
-          style={{
-            maxWidth: '1200px',
-            margin: '0 auto',
-            padding: '0.75rem 1rem',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: '0.75rem'
-          }}
-        >
+        <div className="site-header-inner">
           {/* Brand Wordmark & Primary Clean Navigation */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '2rem' }}>
             <Link
               href="/"
               style={{
@@ -83,7 +73,7 @@ export default function Header() {
               <span
                 style={{
                   fontFamily: 'var(--font-serif)',
-                  fontSize: 'clamp(1.25rem, 4vw, 1.5rem)',
+                  fontSize: '1.5rem',
                   fontWeight: 800,
                   letterSpacing: '-0.03em',
                   color: 'var(--text-primary)'

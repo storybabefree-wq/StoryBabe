@@ -4,15 +4,7 @@ import { ShieldCheck, HeartHandshake } from 'lucide-react';
 
 export default function Footer() {
   return (
-    <footer
-      style={{
-        borderTop: '1px solid var(--border-subtle)',
-        backgroundColor: 'var(--bg-secondary)',
-        padding: '2.5rem 1.25rem 6rem',
-        marginTop: 'auto',
-        width: '100%'
-      }}
-    >
+    <footer className="site-footer">
       <div
         style={{
           maxWidth: '1200px',
