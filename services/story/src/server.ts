@@ -168,56 +168,67 @@ app.post('/stories/generate-poster', async (req: any, res: any): Promise<void> =
     const finalPrompt = customPrompt ? `${customPrompt} ${modifiers.join(', ')}` : analysis.suggestedPrompt;
     const finalOneliner = customOneliner || analysis.suggestedHook;
 
-    const apiKey = process.env.OPENROUTER_API_KEY;
-    const model = process.env.OPENROUTER_IMAGE_MODEL || 'black-forest-labs/flux-1-schnell';
+    const hfApiKey = (process.env.HUGGINGFACE_API_KEY || process.env.HF_TOKEN || '').trim();
+    const hfModel = (process.env.HUGGINGFACE_IMAGE_MODEL || 'black-forest-labs/FLUX.1-schnell').trim();
 
     let generatedPosterUrl: string | null = null;
     let generatorSource = 'CURATED_PRESET';
 
-    // Call OpenRouter if API key is provided
-    if (apiKey && apiKey.trim().length > 0) {
+    // 1. Primary: Hugging Face Inference API
+    if (hfApiKey) {
       try {
-        const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        console.log(`[Hugging Face API] Generating image using model ${hfModel}...`);
+        const hfRes = await fetch(`https://api-inference.huggingface.co/models/${hfModel}`, {
           method: 'POST',
           headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${apiKey.trim()}`,
-            'HTTP-Referer': process.env.APP_URL || 'https://storybabe-iota.vercel.app',
-            'X-Title': 'StoryBabe'
+            Authorization: `Bearer ${hfApiKey}`,
+            'Content-Type': 'application/json'
           },
           body: JSON.stringify({
-            model,
-            messages: [
-              {
-                role: 'user',
-                content: finalPrompt
-              }
-            ],
-            response_format: { type: 'json_object' }
+            inputs: finalPrompt,
+            parameters: {
+              width: 768,
+              height: 960
+            }
           })
         });
 
-        if (response.ok) {
-          const json: any = await response.json();
-          const imageUrl = json.choices?.[0]?.message?.content || json.choices?.[0]?.message?.image_url;
-          if (imageUrl && typeof imageUrl === 'string' && imageUrl.startsWith('http')) {
-            // Fetch image and convert to durable Base64 data URI
-            const imgRes = await fetch(imageUrl);
-            if (imgRes.ok) {
-              const arrayBuf = await imgRes.arrayBuffer();
-              const base64Str = Buffer.from(arrayBuf).toString('base64');
-              const contentType = imgRes.headers.get('content-type') || 'image/jpeg';
-              generatedPosterUrl = `data:${contentType};base64,${base64Str}`;
-              generatorSource = 'OPENROUTER_AI';
-            }
-          }
+        if (hfRes.ok) {
+          const arrayBuf = await hfRes.arrayBuffer();
+          const contentType = hfRes.headers.get('content-type') || 'image/jpeg';
+          const base64Str = Buffer.from(arrayBuf).toString('base64');
+          generatedPosterUrl = `data:${contentType};base64,${base64Str}`;
+          generatorSource = 'HUGGINGFACE_AI';
+          console.log('[Hugging Face API] Successfully generated poster artwork!');
+        } else {
+          const errorText = await hfRes.text();
+          console.error('[Hugging Face API Error]:', hfRes.status, errorText);
         }
-      } catch (openRouterErr) {
-        console.error('OpenRouter generation error, using fallback:', openRouterErr);
+      } catch (hfErr: any) {
+        console.error('[Hugging Face API Exception]:', hfErr.message);
       }
     }
 
-    // Fallback to high quality atmospheric visual preset if OpenRouter did not return image
+    // 2. Secondary Fallback: Pollinations.ai FLUX (Free Open-Source)
+    if (!generatedPosterUrl) {
+      try {
+        console.log('[Pollinations AI] Generating FLUX cover image fallback...');
+        const pollUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(finalPrompt)}?width=768&height=960&model=flux&nologo=true&seed=${Math.floor(Math.random() * 1000000)}`;
+        const pollRes = await fetch(pollUrl);
+        if (pollRes.ok) {
+          const arrayBuf = await pollRes.arrayBuffer();
+          const contentType = pollRes.headers.get('content-type') || 'image/jpeg';
+          const base64Str = Buffer.from(arrayBuf).toString('base64');
+          generatedPosterUrl = `data:${contentType};base64,${base64Str}`;
+          generatorSource = 'POLLINATIONS_FLUX';
+          console.log('[Pollinations AI] Successfully generated FLUX poster artwork!');
+        }
+      } catch (pollErr: any) {
+        console.error('[Pollinations AI Exception]:', pollErr.message);
+      }
+    }
+
+    // 3. Final Fallback: Curated Editorial Preset
     if (!generatedPosterUrl) {
       const matched = AESTHETIC_PRESETS.find((p) => p.name.toLowerCase().includes(analysis.detectedMood)) || AESTHETIC_PRESETS[0];
       generatedPosterUrl = matched.imageUrl;
