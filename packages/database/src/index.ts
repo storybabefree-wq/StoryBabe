@@ -1,6 +1,4 @@
-import { DatabaseSync } from 'node:sqlite';
-import path from 'path';
-import fs from 'fs';
+import pg from 'pg';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import type {
@@ -16,66 +14,61 @@ import type {
   UserRole
 } from '@storybabe/types';
 
-// Robust workspace root discovery for persistent database access across microservices
-function findWorkspaceDataDir(): string {
-  if (process.env.DATABASE_FILE_PATH) {
-    const customDir = path.dirname(process.env.DATABASE_FILE_PATH);
-    if (!fs.existsSync(customDir)) fs.mkdirSync(customDir, { recursive: true });
-    return customDir;
-  }
-  let current = process.cwd();
-  for (let i = 0; i < 6; i++) {
-    const candidate = path.join(current, 'data');
-    if (
-      fs.existsSync(path.join(current, 'bun.lock')) ||
-      (fs.existsSync(path.join(current, 'package.json')) && fs.existsSync(path.join(current, 'services')))
-    ) {
-      if (!fs.existsSync(candidate)) {
-        fs.mkdirSync(candidate, { recursive: true });
-      }
-      return candidate;
-    }
-    const parent = path.dirname(current);
-    if (parent === current) break;
-    current = parent;
-  }
-  const fallback = path.resolve(process.cwd(), 'data');
-  if (!fs.existsSync(fallback)) fs.mkdirSync(fallback, { recursive: true });
-  return fallback;
+// PostgreSQL Connection Pool
+const DATABASE_URL = process.env.DATABASE_URL;
+if (!DATABASE_URL) {
+  console.error('[Database] FATAL: DATABASE_URL environment variable is required.');
+  console.error('[Database] Set DATABASE_URL to your Supabase/Neon PostgreSQL connection string.');
+  process.exit(1);
 }
 
-const dbDir = findWorkspaceDataDir();
-const dbPath = process.env.DATABASE_FILE_PATH || path.join(dbDir, 'storybabe.db');
+const pool = new pg.Pool({
+  connectionString: DATABASE_URL,
+  ssl: { rejectUnauthorized: false },
+  max: 10,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 10000
+});
 
-export const db = new DatabaseSync(dbPath);
+pool.on('error', (err) => {
+  console.error('[Database] Unexpected pool error:', err.message);
+});
 
-// Enable WAL mode, busy timeout and safe concurrency for SQLite
-try {
-  db.exec('PRAGMA journal_mode = WAL;');
-  db.exec('PRAGMA busy_timeout = 10000;');
-  db.exec('PRAGMA synchronous = NORMAL;');
-} catch (e) {
-  // Ignored
+// Helper: run a query
+async function query(sql: string, params: any[] = []): Promise<any[]> {
+  const res = await pool.query(sql, params);
+  return res.rows;
 }
 
-// Initialize schema tables safely
-try {
-  db.exec(`
+// Helper: run a query and get first row
+async function queryOne(sql: string, params: any[] = []): Promise<any | null> {
+  const res = await pool.query(sql, params);
+  return res.rows[0] || null;
+}
+
+// Helper: execute a statement (INSERT/UPDATE/DELETE)
+async function execute(sql: string, params: any[] = []): Promise<void> {
+  await pool.query(sql, params);
+}
+
+// Initialize schema tables
+async function initializeSchema(): Promise<void> {
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY,
       email TEXT NOT NULL,
       username TEXT UNIQUE NOT NULL,
-      displayName TEXT NOT NULL,
-      passwordHash TEXT NOT NULL,
+      "displayName" TEXT NOT NULL,
+      "passwordHash" TEXT NOT NULL,
       bio TEXT,
-      avatarUrl TEXT,
+      "avatarUrl" TEXT,
       role TEXT DEFAULT 'AUTHOR',
-      lastUsernameChangeAt TEXT,
-      usernameChangesCount INTEGER DEFAULT 0,
-      emailVerified INTEGER DEFAULT 0,
-      emailVerifiedAt TEXT,
-      createdAt TEXT NOT NULL,
-      updatedAt TEXT NOT NULL
+      "lastUsernameChangeAt" TEXT,
+      "usernameChangesCount" INTEGER DEFAULT 0,
+      "emailVerified" BOOLEAN DEFAULT false,
+      "emailVerifiedAt" TEXT,
+      "createdAt" TEXT NOT NULL,
+      "updatedAt" TEXT NOT NULL
     );
 
     CREATE TABLE IF NOT EXISTS otp_verifications (
@@ -84,69 +77,65 @@ try {
       code TEXT NOT NULL,
       type TEXT NOT NULL,
       payload TEXT,
-      expiresAt TEXT NOT NULL,
+      "expiresAt" TEXT NOT NULL,
       attempts INTEGER DEFAULT 0,
-      verified INTEGER DEFAULT 0,
-      createdAt TEXT NOT NULL
+      verified BOOLEAN DEFAULT false,
+      "createdAt" TEXT NOT NULL
     );
 
     CREATE TABLE IF NOT EXISTS username_history (
       id TEXT PRIMARY KEY,
-      userId TEXT NOT NULL,
-      oldUsername TEXT NOT NULL,
-      newUsername TEXT NOT NULL,
-      changedAt TEXT NOT NULL,
-      FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE
+      "userId" TEXT NOT NULL,
+      "oldUsername" TEXT NOT NULL,
+      "newUsername" TEXT NOT NULL,
+      "changedAt" TEXT NOT NULL
     );
 
     CREATE TABLE IF NOT EXISTS stories (
       id TEXT PRIMARY KEY,
-      authorId TEXT NOT NULL,
+      "authorId" TEXT NOT NULL,
       title TEXT NOT NULL,
       summary TEXT NOT NULL,
       oneliner TEXT,
-      posterUrl TEXT,
-      posterStyle TEXT DEFAULT 'bottom-gradient',
-      posterType TEXT DEFAULT 'PRESET',
+      "posterUrl" TEXT,
+      "posterStyle" TEXT DEFAULT 'bottom-gradient',
+      "posterType" TEXT DEFAULT 'PRESET',
       content TEXT,
       type TEXT NOT NULL,
       status TEXT DEFAULT 'ONGOING',
-      onHoldReason TEXT,
-      isInactive INTEGER DEFAULT 0,
-      inactiveTaggedAt TEXT,
-      allowComments INTEGER DEFAULT 1,
-      viewsCount INTEGER DEFAULT 0,
-      likesCount INTEGER DEFAULT 0,
-      isUnpublished INTEGER DEFAULT 0,
-      createdAt TEXT NOT NULL,
-      updatedAt TEXT NOT NULL,
-      publishedAt TEXT,
-      FOREIGN KEY (authorId) REFERENCES users(id) ON DELETE CASCADE
+      "onHoldReason" TEXT,
+      "isInactive" BOOLEAN DEFAULT false,
+      "inactiveTaggedAt" TEXT,
+      "allowComments" BOOLEAN DEFAULT true,
+      "viewsCount" INTEGER DEFAULT 0,
+      "likesCount" INTEGER DEFAULT 0,
+      "isUnpublished" BOOLEAN DEFAULT false,
+      "createdAt" TEXT NOT NULL,
+      "updatedAt" TEXT NOT NULL,
+      "publishedAt" TEXT
     );
 
     CREATE TABLE IF NOT EXISTS episodes (
       id TEXT PRIMARY KEY,
-      storyId TEXT NOT NULL,
-      seasonNumber INTEGER DEFAULT 1,
-      episodeNumber INTEGER NOT NULL,
+      "storyId" TEXT NOT NULL,
+      "seasonNumber" INTEGER DEFAULT 1,
+      "episodeNumber" INTEGER NOT NULL,
       title TEXT NOT NULL,
       content TEXT NOT NULL,
       status TEXT DEFAULT 'COMPLETED',
-      onHoldReason TEXT,
-      viewsCount INTEGER DEFAULT 0,
-      likesCount INTEGER DEFAULT 0,
-      createdAt TEXT NOT NULL,
-      updatedAt TEXT NOT NULL,
-      FOREIGN KEY (storyId) REFERENCES stories(id) ON DELETE CASCADE,
-      UNIQUE(storyId, seasonNumber, episodeNumber)
+      "onHoldReason" TEXT,
+      "viewsCount" INTEGER DEFAULT 0,
+      "likesCount" INTEGER DEFAULT 0,
+      "createdAt" TEXT NOT NULL,
+      "updatedAt" TEXT NOT NULL,
+      UNIQUE("storyId", "seasonNumber", "episodeNumber")
     );
 
     CREATE TABLE IF NOT EXISTS story_safety_flags (
       id TEXT PRIMARY KEY,
-      storyId TEXT NOT NULL,
+      "storyId" TEXT NOT NULL,
       flag TEXT NOT NULL,
-      FOREIGN KEY (storyId) REFERENCES stories(id) ON DELETE CASCADE,
-      UNIQUE(storyId, flag)
+      UNIQUE("storyId", flag)
     );
 
     CREATE TABLE IF NOT EXISTS tags (
@@ -156,209 +145,143 @@ try {
 
     CREATE TABLE IF NOT EXISTS story_tags (
       id TEXT PRIMARY KEY,
-      storyId TEXT NOT NULL,
-      tagId TEXT NOT NULL,
-      FOREIGN KEY (storyId) REFERENCES stories(id) ON DELETE CASCADE,
-      FOREIGN KEY (tagId) REFERENCES tags(id) ON DELETE CASCADE,
-      UNIQUE(storyId, tagId)
+      "storyId" TEXT NOT NULL,
+      "tagId" TEXT NOT NULL,
+      UNIQUE("storyId", "tagId")
     );
 
     CREATE TABLE IF NOT EXISTS story_likes (
       id TEXT PRIMARY KEY,
-      userId TEXT NOT NULL,
-      storyId TEXT NOT NULL,
-      createdAt TEXT NOT NULL,
-      FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE,
-      FOREIGN KEY (storyId) REFERENCES stories(id) ON DELETE CASCADE,
-      UNIQUE(userId, storyId)
+      "userId" TEXT NOT NULL,
+      "storyId" TEXT NOT NULL,
+      "createdAt" TEXT NOT NULL,
+      UNIQUE("userId", "storyId")
     );
 
     CREATE TABLE IF NOT EXISTS episode_likes (
       id TEXT PRIMARY KEY,
-      userId TEXT NOT NULL,
-      episodeId TEXT NOT NULL,
-      createdAt TEXT NOT NULL,
-      FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE,
-      FOREIGN KEY (episodeId) REFERENCES episodes(id) ON DELETE CASCADE,
-      UNIQUE(userId, episodeId)
+      "userId" TEXT NOT NULL,
+      "episodeId" TEXT NOT NULL,
+      "createdAt" TEXT NOT NULL,
+      UNIQUE("userId", "episodeId")
     );
 
     CREATE TABLE IF NOT EXISTS story_views (
       id TEXT PRIMARY KEY,
-      userId TEXT,
-      storyId TEXT NOT NULL,
-      ipAddress TEXT,
-      createdAt TEXT NOT NULL,
-      FOREIGN KEY (storyId) REFERENCES stories(id) ON DELETE CASCADE
+      "userId" TEXT,
+      "storyId" TEXT NOT NULL,
+      "ipAddress" TEXT,
+      "createdAt" TEXT NOT NULL
     );
 
     CREATE TABLE IF NOT EXISTS episode_views (
       id TEXT PRIMARY KEY,
-      userId TEXT,
-      episodeId TEXT NOT NULL,
-      ipAddress TEXT,
-      createdAt TEXT NOT NULL,
-      FOREIGN KEY (episodeId) REFERENCES episodes(id) ON DELETE CASCADE
+      "userId" TEXT,
+      "episodeId" TEXT NOT NULL,
+      "ipAddress" TEXT,
+      "createdAt" TEXT NOT NULL
     );
 
     CREATE TABLE IF NOT EXISTS comments (
       id TEXT PRIMARY KEY,
-      storyId TEXT NOT NULL,
-      episodeId TEXT,
-      userId TEXT NOT NULL,
-      parentId TEXT,
+      "storyId" TEXT NOT NULL,
+      "episodeId" TEXT,
+      "userId" TEXT NOT NULL,
+      "parentId" TEXT,
       content TEXT NOT NULL,
-      createdAt TEXT NOT NULL,
-      updatedAt TEXT NOT NULL,
-      FOREIGN KEY (storyId) REFERENCES stories(id) ON DELETE CASCADE,
-      FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE
+      "createdAt" TEXT NOT NULL,
+      "updatedAt" TEXT NOT NULL
     );
 
     CREATE TABLE IF NOT EXISTS comment_likes (
       id TEXT PRIMARY KEY,
-      userId TEXT NOT NULL,
-      commentId TEXT NOT NULL,
-      createdAt TEXT NOT NULL,
-      FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE,
-      FOREIGN KEY (commentId) REFERENCES comments(id) ON DELETE CASCADE,
-      UNIQUE(userId, commentId)
+      "userId" TEXT NOT NULL,
+      "commentId" TEXT NOT NULL,
+      "createdAt" TEXT NOT NULL,
+      UNIQUE("userId", "commentId")
     );
 
     CREATE TABLE IF NOT EXISTS follows (
       id TEXT PRIMARY KEY,
-      followerId TEXT NOT NULL,
-      followingId TEXT NOT NULL,
-      createdAt TEXT NOT NULL,
-      FOREIGN KEY (followerId) REFERENCES users(id) ON DELETE CASCADE,
-      FOREIGN KEY (followingId) REFERENCES users(id) ON DELETE CASCADE,
-      UNIQUE(followerId, followingId)
+      "followerId" TEXT NOT NULL,
+      "followingId" TEXT NOT NULL,
+      "createdAt" TEXT NOT NULL,
+      UNIQUE("followerId", "followingId")
     );
 
     CREATE TABLE IF NOT EXISTS bookmarks (
       id TEXT PRIMARY KEY,
-      userId TEXT NOT NULL,
-      storyId TEXT NOT NULL,
-      createdAt TEXT NOT NULL,
-      FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE,
-      FOREIGN KEY (storyId) REFERENCES stories(id) ON DELETE CASCADE,
-      UNIQUE(userId, storyId)
+      "userId" TEXT NOT NULL,
+      "storyId" TEXT NOT NULL,
+      "createdAt" TEXT NOT NULL,
+      UNIQUE("userId", "storyId")
     );
 
     CREATE TABLE IF NOT EXISTS reports (
       id TEXT PRIMARY KEY,
-      reporterId TEXT NOT NULL,
-      storyId TEXT NOT NULL,
-      episodeId TEXT,
+      "reporterId" TEXT NOT NULL,
+      "storyId" TEXT NOT NULL,
+      "episodeId" TEXT,
       category TEXT NOT NULL,
       priority TEXT DEFAULT 'NORMAL',
       status TEXT DEFAULT 'PENDING',
       reason TEXT NOT NULL,
-      moderatorNotes TEXT,
-      resolvedById TEXT,
-      resolvedAt TEXT,
-      createdAt TEXT NOT NULL,
-      updatedAt TEXT NOT NULL,
-      FOREIGN KEY (reporterId) REFERENCES users(id) ON DELETE CASCADE,
-      FOREIGN KEY (storyId) REFERENCES stories(id) ON DELETE CASCADE
+      "moderatorNotes" TEXT,
+      "resolvedById" TEXT,
+      "resolvedAt" TEXT,
+      "createdAt" TEXT NOT NULL,
+      "updatedAt" TEXT NOT NULL
     );
 
     CREATE TABLE IF NOT EXISTS moderation_actions (
       id TEXT PRIMARY KEY,
-      reportId TEXT,
-      moderatorId TEXT NOT NULL,
-      actionType TEXT NOT NULL,
-      targetType TEXT NOT NULL,
-      targetId TEXT NOT NULL,
+      "reportId" TEXT,
+      "moderatorId" TEXT NOT NULL,
+      "actionType" TEXT NOT NULL,
+      "targetType" TEXT NOT NULL,
+      "targetId" TEXT NOT NULL,
       notes TEXT NOT NULL,
-      createdAt TEXT NOT NULL,
-      FOREIGN KEY (moderatorId) REFERENCES users(id) ON DELETE CASCADE
+      "createdAt" TEXT NOT NULL
     );
+
+    CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+    CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
+    CREATE INDEX IF NOT EXISTS idx_stories_authorid ON stories("authorId");
+    CREATE INDEX IF NOT EXISTS idx_stories_created ON stories("createdAt");
+    CREATE INDEX IF NOT EXISTS idx_episodes_storyid ON episodes("storyId");
+    CREATE INDEX IF NOT EXISTS idx_comments_storyid ON comments("storyId");
+    CREATE INDEX IF NOT EXISTS idx_follows_follower ON follows("followerId");
+    CREATE INDEX IF NOT EXISTS idx_follows_following ON follows("followingId");
+    CREATE INDEX IF NOT EXISTS idx_otp_email ON otp_verifications(email);
   `);
-} catch (e) {
-  // Schema already created by another worker
+  console.log('[Database] PostgreSQL schema initialized successfully.');
 }
 
-// Safe migrations for existing SQLite database using PRAGMA table_info
-try {
-  const storyTableInfo = db.prepare("PRAGMA table_info(stories)").all() as any[];
-  const storyCols = new Set(storyTableInfo.map((c) => c.name));
-  if (!storyCols.has('oneliner')) {
-    db.exec('ALTER TABLE stories ADD COLUMN oneliner TEXT');
-  }
-  if (!storyCols.has('posterUrl')) {
-    db.exec('ALTER TABLE stories ADD COLUMN posterUrl TEXT');
-  }
-  if (!storyCols.has('posterStyle')) {
-    db.exec("ALTER TABLE stories ADD COLUMN posterStyle TEXT DEFAULT 'bottom-gradient'");
-  }
-  if (!storyCols.has('posterType')) {
-    db.exec("ALTER TABLE stories ADD COLUMN posterType TEXT DEFAULT 'PRESET'");
-  }
+// Run schema init on module load
+initializeSchema().catch((err) => {
+  console.error('[Database] Schema initialization failed:', err.message);
+});
 
-  const userTableInfo = db.prepare("PRAGMA table_info(users)").all() as any[];
-  const userCols = new Set(userTableInfo.map((c) => c.name));
-  if (!userCols.has('emailVerified')) {
-    db.exec('ALTER TABLE users ADD COLUMN emailVerified INTEGER DEFAULT 0');
-  }
-  if (!userCols.has('emailVerifiedAt')) {
-    db.exec('ALTER TABLE users ADD COLUMN emailVerifiedAt TEXT');
-  }
-
-  // Migrate existing users table to remove UNIQUE constraint on email if present
-  const masterSql = (db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='users'").get() as any)?.sql || '';
-  if (masterSql.includes('email TEXT UNIQUE NOT NULL') || masterSql.includes('email TEXT NOT NULL UNIQUE')) {
-    db.exec(`
-      CREATE TABLE users_new (
-        id TEXT PRIMARY KEY,
-        email TEXT NOT NULL,
-        username TEXT UNIQUE NOT NULL,
-        displayName TEXT NOT NULL,
-        passwordHash TEXT NOT NULL,
-        bio TEXT,
-        avatarUrl TEXT,
-        role TEXT DEFAULT 'AUTHOR',
-        lastUsernameChangeAt TEXT,
-        usernameChangesCount INTEGER DEFAULT 0,
-        emailVerified INTEGER DEFAULT 0,
-        emailVerifiedAt TEXT,
-        createdAt TEXT NOT NULL,
-        updatedAt TEXT NOT NULL
-      );
-      INSERT OR IGNORE INTO users_new SELECT * FROM users;
-      DROP TABLE users;
-      ALTER TABLE users_new RENAME TO users;
-      CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
-    `);
-  }
-} catch (e) {
-  // Migration already handled
-}
-
-// Cleanup any legacy demo/testing seeds from database
-try {
-  db.exec(`
-    DELETE FROM users WHERE email LIKE '%@storybabe.internal' OR email LIKE '%@internal.test';
-    DELETE FROM stories WHERE authorId LIKE 'user-elena%' OR authorId LIKE 'user-marcus%' OR authorId LIKE 'user-sarah%' OR authorId LIKE 'user-mod%';
-    DELETE FROM episodes WHERE storyId IN ('story-1', 'story-2', 'story-3', 'story-4');
-  `);
-} catch (e) {
-  // Ignore
-}
+// Export pool for direct access if needed
+export const db = pool;
 
 // -------------------------------------------------------------
-// Type-safe Prisma-like Database abstraction
+// Type-safe Prisma-like Database abstraction (PostgreSQL)
 // -------------------------------------------------------------
 
 export const prisma = {
   $transaction: async (fn: (tx: any) => Promise<any>) => {
-    db.exec('BEGIN TRANSACTION');
+    const client = await pool.connect();
     try {
+      await client.query('BEGIN');
       const res = await fn(prisma);
-      db.exec('COMMIT');
+      await client.query('COMMIT');
       return res;
     } catch (err) {
-      db.exec('ROLLBACK');
+      await client.query('ROLLBACK');
       throw err;
+    } finally {
+      client.release();
     }
   },
 
@@ -366,26 +289,26 @@ export const prisma = {
     findUnique: async ({ where }: { where: { id?: string; email?: string; username?: string } }) => {
       let row: any = null;
       if (where.id) {
-        row = db.prepare('SELECT * FROM users WHERE id = ?').get(where.id);
+        row = await queryOne('SELECT * FROM users WHERE id = $1', [where.id]);
       } else if (where.email) {
-        row = db.prepare('SELECT * FROM users WHERE email = ?').get(where.email.toLowerCase());
+        row = await queryOne('SELECT * FROM users WHERE LOWER(email) = LOWER($1)', [where.email]);
       } else if (where.username) {
-        row = db.prepare('SELECT * FROM users WHERE username = ?').get(where.username.toLowerCase());
+        row = await queryOne('SELECT * FROM users WHERE LOWER(username) = LOWER($1)', [where.username]);
       }
       if (!row) return null;
 
-      const followersCount = (db.prepare('SELECT COUNT(*) as c FROM follows WHERE followingId = ?').get(row.id) as any).c;
-      const followingCount = (db.prepare('SELECT COUNT(*) as c FROM follows WHERE followerId = ?').get(row.id) as any).c;
-      const storiesCount = (db.prepare('SELECT COUNT(*) as c FROM stories WHERE authorId = ? AND isUnpublished = 0').get(row.id) as any).c;
+      const followersCount = (await queryOne('SELECT COUNT(*) as c FROM follows WHERE "followingId" = $1', [row.id]))?.c || 0;
+      const followingCount = (await queryOne('SELECT COUNT(*) as c FROM follows WHERE "followerId" = $1', [row.id]))?.c || 0;
+      const storiesCount = (await queryOne('SELECT COUNT(*) as c FROM stories WHERE "authorId" = $1 AND "isUnpublished" = false', [row.id]))?.c || 0;
 
       return {
         ...row,
         emailVerified: Boolean(row.emailVerified),
         emailVerifiedAt: row.emailVerifiedAt ? new Date(row.emailVerifiedAt).toISOString() : null,
         _count: {
-          followers: followersCount,
-          following: followingCount,
-          stories: storiesCount
+          followers: Number(followersCount),
+          following: Number(followingCount),
+          stories: Number(storiesCount)
         }
       };
     },
@@ -395,7 +318,7 @@ export const prisma = {
         return prisma.user.findUnique({ where: { username: where.username } });
       }
       if (where.email) {
-        const row = db.prepare('SELECT * FROM users WHERE LOWER(email) = LOWER(?) LIMIT 1').get(where.email) as any;
+        const row = await queryOne('SELECT * FROM users WHERE LOWER(email) = LOWER($1) LIMIT 1', [where.email]);
         if (!row) return null;
         return prisma.user.findUnique({ where: { id: row.id } });
       }
@@ -406,7 +329,7 @@ export const prisma = {
             if (res) return res;
           }
           if (item.email) {
-            const row = db.prepare('SELECT * FROM users WHERE LOWER(email) = LOWER(?) LIMIT 1').get(item.email) as any;
+            const row = await queryOne('SELECT * FROM users WHERE LOWER(email) = LOWER($1) LIMIT 1', [item.email]);
             if (row) return prisma.user.findUnique({ where: { id: row.id } });
           }
         }
@@ -415,23 +338,24 @@ export const prisma = {
     },
 
     findMany: async ({ where = {} }: any = {}) => {
-      let query = 'SELECT * FROM users WHERE 1=1';
+      let sql = 'SELECT * FROM users WHERE 1=1';
       const params: any[] = [];
+      let idx = 1;
       if (where.email) {
-        query += ' AND LOWER(email) = LOWER(?)';
+        sql += ` AND LOWER(email) = LOWER($${idx++})`;
         params.push(where.email);
       }
-      const rows = db.prepare(query).all(...params) as any[];
+      const rows = await query(sql, params);
       return Promise.all(rows.map((row) => prisma.user.findUnique({ where: { id: row.id } })));
     },
 
     create: async ({ data }: { data: any }) => {
       const id = data.id || crypto.randomUUID();
       const now = new Date().toISOString();
-      db.prepare(`
-        INSERT INTO users (id, email, username, displayName, passwordHash, bio, avatarUrl, role, lastUsernameChangeAt, usernameChangesCount, emailVerified, emailVerifiedAt, createdAt, updatedAt)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(
+      await execute(`
+        INSERT INTO users (id, email, username, "displayName", "passwordHash", bio, "avatarUrl", role, "lastUsernameChangeAt", "usernameChangesCount", "emailVerified", "emailVerifiedAt", "createdAt", "updatedAt")
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+      `, [
         id,
         data.email.toLowerCase(),
         data.username.toLowerCase(),
@@ -442,16 +366,16 @@ export const prisma = {
         data.role || 'AUTHOR',
         data.lastUsernameChangeAt || null,
         data.usernameChangesCount || 0,
-        data.emailVerified ? 1 : 0,
+        data.emailVerified ? true : false,
         data.emailVerifiedAt ? new Date(data.emailVerifiedAt).toISOString() : (data.emailVerified ? now : null),
         now,
         now
-      );
+      ]);
       return prisma.user.findUnique({ where: { id } });
     },
 
     update: async ({ where, data }: { where: { id: string }; data: any }) => {
-      const current = db.prepare('SELECT * FROM users WHERE id = ?').get(where.id) as any;
+      const current = await queryOne('SELECT * FROM users WHERE id = $1', [where.id]);
       if (!current) throw new Error('User not found');
 
       const now = new Date().toISOString();
@@ -460,32 +384,33 @@ export const prisma = {
       const newBio = data.bio !== undefined ? data.bio : current.bio;
       const newAvatarUrl = data.avatarUrl !== undefined ? data.avatarUrl : current.avatarUrl;
       const newPasswordHash = data.passwordHash !== undefined ? data.passwordHash : current.passwordHash;
-      const newEmailVerified = data.emailVerified !== undefined ? (data.emailVerified ? 1 : 0) : current.emailVerified;
+      const newEmailVerified = data.emailVerified !== undefined ? Boolean(data.emailVerified) : Boolean(current.emailVerified);
       const newEmailVerifiedAt = data.emailVerifiedAt !== undefined ? (data.emailVerifiedAt ? new Date(data.emailVerifiedAt).toISOString() : null) : current.emailVerifiedAt;
       const newLastChange = data.lastUsernameChangeAt !== undefined ? (data.lastUsernameChangeAt ? new Date(data.lastUsernameChangeAt).toISOString() : null) : current.lastUsernameChangeAt;
       const newChangeCount = data.usernameChangesCount?.increment !== undefined ? current.usernameChangesCount + 1 : (data.usernameChangesCount !== undefined ? data.usernameChangesCount : current.usernameChangesCount);
 
-      db.prepare(`
-        UPDATE users SET username = ?, displayName = ?, bio = ?, avatarUrl = ?, passwordHash = ?, emailVerified = ?, emailVerifiedAt = ?, lastUsernameChangeAt = ?, usernameChangesCount = ?, updatedAt = ?
-        WHERE id = ?
-      `).run(newUsername, newDisplayName, newBio, newAvatarUrl, newPasswordHash, newEmailVerified, newEmailVerifiedAt, newLastChange, newChangeCount, now, where.id);
+      await execute(`
+        UPDATE users SET username = $1, "displayName" = $2, bio = $3, "avatarUrl" = $4, "passwordHash" = $5, "emailVerified" = $6, "emailVerifiedAt" = $7, "lastUsernameChangeAt" = $8, "usernameChangesCount" = $9, "updatedAt" = $10
+        WHERE id = $11
+      `, [newUsername, newDisplayName, newBio, newAvatarUrl, newPasswordHash, newEmailVerified, newEmailVerifiedAt, newLastChange, newChangeCount, now, where.id]);
 
       return prisma.user.findUnique({ where: { id: where.id } });
     },
 
     count: async ({ where }: { where?: any } = {}) => {
-      let query = 'SELECT COUNT(*) as c FROM users WHERE 1=1';
+      let sql = 'SELECT COUNT(*) as c FROM users WHERE 1=1';
       const params: any[] = [];
+      let idx = 1;
       if (where?.email) {
-        query += ' AND LOWER(email) = LOWER(?)';
+        sql += ` AND LOWER(email) = LOWER($${idx++})`;
         params.push(where.email);
       }
       if (where?.username) {
-        query += ' AND LOWER(username) = LOWER(?)';
+        sql += ` AND LOWER(username) = LOWER($${idx++})`;
         params.push(where.username);
       }
-      const res = db.prepare(query).get(...params) as any;
-      return res?.c || 0;
+      const res = await queryOne(sql, params);
+      return Number(res?.c || 0);
     }
   },
 
@@ -493,10 +418,10 @@ export const prisma = {
     create: async ({ data }: { data: any }) => {
       const id = data.id || crypto.randomUUID();
       const now = new Date().toISOString();
-      db.prepare(`
-        INSERT INTO otp_verifications (id, email, code, type, payload, expiresAt, attempts, verified, createdAt)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(
+      await execute(`
+        INSERT INTO otp_verifications (id, email, code, type, payload, "expiresAt", attempts, verified, "createdAt")
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      `, [
         id,
         data.email.toLowerCase(),
         data.code,
@@ -504,14 +429,14 @@ export const prisma = {
         data.payload || null,
         new Date(data.expiresAt).toISOString(),
         data.attempts || 0,
-        data.verified ? 1 : 0,
+        data.verified ? true : false,
         now
-      );
+      ]);
       return prisma.otpVerification.findUnique({ where: { id } });
     },
 
     findUnique: async ({ where }: { where: { id: string } }) => {
-      const row = db.prepare('SELECT * FROM otp_verifications WHERE id = ?').get(where.id) as any;
+      const row = await queryOne('SELECT * FROM otp_verifications WHERE id = $1', [where.id]);
       if (!row) return null;
       return {
         ...row,
@@ -520,26 +445,27 @@ export const prisma = {
     },
 
     findFirst: async ({ where }: any) => {
-      let query = 'SELECT * FROM otp_verifications WHERE 1=1';
+      let sql = 'SELECT * FROM otp_verifications WHERE 1=1';
       const params: any[] = [];
+      let idx = 1;
       if (where.email) {
-        query += ' AND LOWER(email) = LOWER(?)';
+        sql += ` AND LOWER(email) = LOWER($${idx++})`;
         params.push(where.email);
       }
       if (where.type) {
-        query += ' AND type = ?';
+        sql += ` AND type = $${idx++}`;
         params.push(where.type);
       }
       if (where.code) {
-        query += ' AND code = ?';
+        sql += ` AND code = $${idx++}`;
         params.push(where.code);
       }
       if (where.verified !== undefined) {
-        query += ' AND verified = ?';
-        params.push(where.verified ? 1 : 0);
+        sql += ` AND verified = $${idx++}`;
+        params.push(Boolean(where.verified));
       }
-      query += ' ORDER BY createdAt DESC LIMIT 1';
-      const row = db.prepare(query).get(...params) as any;
+      sql += ' ORDER BY "createdAt" DESC LIMIT 1';
+      const row = await queryOne(sql, params);
       if (!row) return null;
       return {
         ...row,
@@ -548,36 +474,37 @@ export const prisma = {
     },
 
     update: async ({ where, data }: { where: { id: string }; data: any }) => {
-      const current = db.prepare('SELECT * FROM otp_verifications WHERE id = ?').get(where.id) as any;
+      const current = await queryOne('SELECT * FROM otp_verifications WHERE id = $1', [where.id]);
       if (!current) throw new Error('OTP verification not found');
 
       let newAttempts = current.attempts;
       if (data.attempts?.increment) newAttempts += data.attempts.increment;
       else if (data.attempts !== undefined) newAttempts = data.attempts;
 
-      const newVerified = data.verified !== undefined ? (data.verified ? 1 : 0) : current.verified;
+      const newVerified = data.verified !== undefined ? Boolean(data.verified) : Boolean(current.verified);
 
-      db.prepare('UPDATE otp_verifications SET attempts = ?, verified = ? WHERE id = ?').run(
+      await execute('UPDATE otp_verifications SET attempts = $1, verified = $2 WHERE id = $3', [
         newAttempts,
         newVerified,
         where.id
-      );
+      ]);
 
       return prisma.otpVerification.findUnique({ where: { id: where.id } });
     },
 
     deleteMany: async ({ where }: any) => {
-      let query = 'DELETE FROM otp_verifications WHERE 1=1';
+      let sql = 'DELETE FROM otp_verifications WHERE 1=1';
       const params: any[] = [];
+      let idx = 1;
       if (where.email) {
-        query += ' AND LOWER(email) = LOWER(?)';
+        sql += ` AND LOWER(email) = LOWER($${idx++})`;
         params.push(where.email);
       }
       if (where.type) {
-        query += ' AND type = ?';
+        sql += ` AND type = $${idx++}`;
         params.push(where.type);
       }
-      db.prepare(query).run(...params);
+      await execute(sql, params);
     }
   },
 
@@ -585,84 +512,86 @@ export const prisma = {
     create: async ({ data }: { data: any }) => {
       const id = data.id || crypto.randomUUID();
       const now = new Date().toISOString();
-      db.prepare('INSERT INTO username_history (id, userId, oldUsername, newUsername, changedAt) VALUES (?, ?, ?, ?, ?)').run(
+      await execute('INSERT INTO username_history (id, "userId", "oldUsername", "newUsername", "changedAt") VALUES ($1, $2, $3, $4, $5)', [
         id,
         data.userId,
         data.oldUsername,
         data.newUsername,
         now
-      );
+      ]);
     }
   },
 
   story: {
     findMany: async ({ where = {}, orderBy = {}, skip = 0, take = 20 }: any = {}) => {
-      let query = 'SELECT s.* FROM stories s WHERE s.isUnpublished = 0';
+      let sql = 'SELECT s.* FROM stories s WHERE s."isUnpublished" = false';
       const params: any[] = [];
+      let idx = 1;
 
       if (where.type) {
-        query += ' AND s.type = ?';
+        sql += ` AND s.type = $${idx++}`;
         params.push(where.type);
       }
       if (where.status) {
-        query += ' AND s.status = ?';
+        sql += ` AND s.status = $${idx++}`;
         params.push(where.status);
       }
       if (where.authorId) {
         if (typeof where.authorId === 'string') {
-          query += ' AND s.authorId = ?';
+          sql += ` AND s."authorId" = $${idx++}`;
           params.push(where.authorId);
         } else if (where.authorId.in && Array.isArray(where.authorId.in)) {
           if (where.authorId.in.length === 0) return [];
-          const placeholders = where.authorId.in.map(() => '?').join(',');
-          query += ` AND s.authorId IN (${placeholders})`;
+          const placeholders = where.authorId.in.map((_: any) => `$${idx++}`).join(',');
+          sql += ` AND s."authorId" IN (${placeholders})`;
           params.push(...where.authorId.in);
         }
       }
       if (where.isInactive !== undefined) {
-        query += ' AND s.isInactive = ?';
-        params.push(where.isInactive ? 1 : 0);
+        sql += ` AND s."isInactive" = $${idx++}`;
+        params.push(Boolean(where.isInactive));
       }
 
       if (where.tag || (where.tags && where.tags.some)) {
         const tagToMatch = where.tag || where.tags.some.tag.name.equals;
-        query += ' AND s.id IN (SELECT st.storyId FROM story_tags st JOIN tags t ON st.tagId = t.id WHERE t.name = ?)';
+        sql += ` AND s.id IN (SELECT st."storyId" FROM story_tags st JOIN tags t ON st."tagId" = t.id WHERE t.name = $${idx++})`;
         params.push(tagToMatch.toLowerCase());
       }
 
       if (where.safetyFlag || (where.safetyFlags && where.safetyFlags.some)) {
         const flagToMatch = where.safetyFlag || where.safetyFlags.some.flag;
-        query += ' AND s.id IN (SELECT ssf.storyId FROM story_safety_flags ssf WHERE ssf.flag = ?)';
+        sql += ` AND s.id IN (SELECT ssf."storyId" FROM story_safety_flags ssf WHERE ssf.flag = $${idx++})`;
         params.push(flagToMatch);
       }
 
       if (where.OR) {
         const searchVal = where.OR[0]?.title?.contains || '';
         if (searchVal) {
-          query += ' AND (s.title LIKE ? OR s.summary LIKE ? OR s.content LIKE ?)';
           const likePattern = `%${searchVal}%`;
+          sql += ` AND (s.title ILIKE $${idx++} OR s.summary ILIKE $${idx++} OR s.content ILIKE $${idx++})`;
           params.push(likePattern, likePattern, likePattern);
         }
       }
 
-      query += ' ORDER BY s.createdAt DESC';
-      query += ` LIMIT ${take} OFFSET ${skip}`;
+      sql += ` ORDER BY s."createdAt" DESC`;
+      sql += ` LIMIT $${idx++} OFFSET $${idx++}`;
+      params.push(take, skip);
 
-      const rows = db.prepare(query).all(...params) as any[];
+      const rows = await query(sql, params);
       return Promise.all(rows.map((row) => prisma.story.findUnique({ where: { id: row.id } })));
     },
 
     findUnique: async ({ where }: { where: { id: string } }) => {
-      const row = db.prepare('SELECT * FROM stories WHERE id = ?').get(where.id) as any;
+      const row = await queryOne('SELECT * FROM stories WHERE id = $1', [where.id]);
       if (!row) return null;
 
       const author = await prisma.user.findUnique({ where: { id: row.authorId } });
-      const flags = db.prepare('SELECT flag FROM story_safety_flags WHERE storyId = ?').all(row.id) as any[];
-      const tags = db.prepare('SELECT t.name FROM story_tags st JOIN tags t ON st.tagId = t.id WHERE st.storyId = ?').all(row.id) as any[];
-      const episodes = db.prepare('SELECT * FROM episodes WHERE storyId = ? ORDER BY seasonNumber ASC, episodeNumber ASC').all(row.id) as any[];
-      const likes = db.prepare('SELECT userId FROM story_likes WHERE storyId = ?').all(row.id) as any[];
-      const bookmarks = db.prepare('SELECT userId FROM bookmarks WHERE storyId = ?').all(row.id) as any[];
-      const commentCount = (db.prepare('SELECT COUNT(*) as c FROM comments WHERE storyId = ?').get(row.id) as any).c;
+      const flags = await query('SELECT flag FROM story_safety_flags WHERE "storyId" = $1', [row.id]);
+      const tags = await query('SELECT t.name FROM story_tags st JOIN tags t ON st."tagId" = t.id WHERE st."storyId" = $1', [row.id]);
+      const episodes = await query('SELECT * FROM episodes WHERE "storyId" = $1 ORDER BY "seasonNumber" ASC, "episodeNumber" ASC', [row.id]);
+      const likes = await query('SELECT "userId" FROM story_likes WHERE "storyId" = $1', [row.id]);
+      const bookmarks = await query('SELECT "userId" FROM bookmarks WHERE "storyId" = $1', [row.id]);
+      const commentCount = (await queryOne('SELECT COUNT(*) as c FROM comments WHERE "storyId" = $1', [row.id]))?.c || 0;
 
       return {
         ...row,
@@ -677,38 +606,39 @@ export const prisma = {
         bookmarks,
         _count: {
           episodes: episodes.length,
-          comments: commentCount,
+          comments: Number(commentCount),
           likes: likes.length
         }
       };
     },
 
     count: async ({ where = {} }: any = {}) => {
-      let query = 'SELECT COUNT(*) as c FROM stories s WHERE s.isUnpublished = 0';
+      let sql = 'SELECT COUNT(*) as c FROM stories s WHERE s."isUnpublished" = false';
       const params: any[] = [];
+      let idx = 1;
       if (where.type) {
-        query += ' AND s.type = ?';
+        sql += ` AND s.type = $${idx++}`;
         params.push(where.type);
       }
       if (where.status) {
-        query += ' AND s.status = ?';
+        sql += ` AND s.status = $${idx++}`;
         params.push(where.status);
       }
       if (where.authorId && typeof where.authorId === 'string') {
-        query += ' AND s.authorId = ?';
+        sql += ` AND s."authorId" = $${idx++}`;
         params.push(where.authorId);
       }
-      const res = db.prepare(query).get(...params) as any;
-      return res.c;
+      const res = await queryOne(sql, params);
+      return Number(res?.c || 0);
     },
 
     create: async ({ data }: { data: any }) => {
       const id = data.id || crypto.randomUUID();
       const now = new Date().toISOString();
-      db.prepare(`
-        INSERT INTO stories (id, authorId, title, summary, oneliner, posterUrl, posterStyle, posterType, content, type, status, onHoldReason, isInactive, allowComments, viewsCount, likesCount, createdAt, updatedAt, publishedAt)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?)
-      `).run(
+      await execute(`
+        INSERT INTO stories (id, "authorId", title, summary, oneliner, "posterUrl", "posterStyle", "posterType", content, type, status, "onHoldReason", "isInactive", "allowComments", "viewsCount", "likesCount", "createdAt", "updatedAt", "publishedAt")
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 0, 0, $15, $16, $17)
+      `, [
         id,
         data.authorId,
         data.title,
@@ -721,17 +651,17 @@ export const prisma = {
         data.type,
         data.status || 'ONGOING',
         data.onHoldReason || null,
-        data.isInactive ? 1 : 0,
-        data.allowComments !== false ? 1 : 0,
+        data.isInactive ? true : false,
+        data.allowComments !== false ? true : false,
         now,
         now,
         now
-      );
+      ]);
       return prisma.story.findUnique({ where: { id } });
     },
 
     update: async ({ where, data }: { where: { id: string }; data: any }) => {
-      const current = db.prepare('SELECT * FROM stories WHERE id = ?').get(where.id) as any;
+      const current = await queryOne('SELECT * FROM stories WHERE id = $1', [where.id]);
       if (!current) throw new Error('Story not found');
 
       const now = new Date().toISOString();
@@ -744,10 +674,10 @@ export const prisma = {
       const newContent = data.content !== undefined ? data.content : current.content;
       const newStatus = data.status !== undefined ? data.status : current.status;
       const newOnHold = data.onHoldReason !== undefined ? data.onHoldReason : current.onHoldReason;
-      const newInactive = data.isInactive !== undefined ? (data.isInactive ? 1 : 0) : current.isInactive;
+      const newInactive = data.isInactive !== undefined ? Boolean(data.isInactive) : Boolean(current.isInactive);
       const newInactiveTagged = data.inactiveTaggedAt !== undefined ? (data.inactiveTaggedAt ? new Date(data.inactiveTaggedAt).toISOString() : null) : current.inactiveTaggedAt;
-      const newAllowComments = data.allowComments !== undefined ? (data.allowComments ? 1 : 0) : current.allowComments;
-      const newUnpublished = data.isUnpublished !== undefined ? (data.isUnpublished ? 1 : 0) : current.isUnpublished;
+      const newAllowComments = data.allowComments !== undefined ? Boolean(data.allowComments) : Boolean(current.allowComments);
+      const newUnpublished = data.isUnpublished !== undefined ? Boolean(data.isUnpublished) : Boolean(current.isUnpublished);
 
       let newLikes = current.likesCount;
       if (data.likesCount?.increment) newLikes += data.likesCount.increment;
@@ -756,10 +686,10 @@ export const prisma = {
       let newViews = current.viewsCount;
       if (data.viewsCount?.increment) newViews += data.viewsCount.increment;
 
-      db.prepare(`
-        UPDATE stories SET title = ?, summary = ?, oneliner = ?, posterUrl = ?, posterStyle = ?, posterType = ?, content = ?, status = ?, onHoldReason = ?, isInactive = ?, inactiveTaggedAt = ?, allowComments = ?, isUnpublished = ?, likesCount = ?, viewsCount = ?, updatedAt = ?
-        WHERE id = ?
-      `).run(
+      await execute(`
+        UPDATE stories SET title = $1, summary = $2, oneliner = $3, "posterUrl" = $4, "posterStyle" = $5, "posterType" = $6, content = $7, status = $8, "onHoldReason" = $9, "isInactive" = $10, "inactiveTaggedAt" = $11, "allowComments" = $12, "isUnpublished" = $13, "likesCount" = $14, "viewsCount" = $15, "updatedAt" = $16
+        WHERE id = $17
+      `, [
         newTitle,
         newSummary,
         newOneliner || null,
@@ -777,7 +707,7 @@ export const prisma = {
         newViews,
         now,
         where.id
-      );
+      ]);
 
       return prisma.story.findUnique({ where: { id: where.id } });
     }
@@ -787,13 +717,13 @@ export const prisma = {
     findUnique: async ({ where }: any) => {
       let row: any = null;
       if (where.id) {
-        row = db.prepare('SELECT * FROM episodes WHERE id = ?').get(where.id);
+        row = await queryOne('SELECT * FROM episodes WHERE id = $1', [where.id]);
       } else if (where.storyId_seasonNumber_episodeNumber) {
         const { storyId, seasonNumber, episodeNumber } = where.storyId_seasonNumber_episodeNumber;
-        row = db.prepare('SELECT * FROM episodes WHERE storyId = ? AND seasonNumber = ? AND episodeNumber = ?').get(storyId, seasonNumber, episodeNumber);
+        row = await queryOne('SELECT * FROM episodes WHERE "storyId" = $1 AND "seasonNumber" = $2 AND "episodeNumber" = $3', [storyId, seasonNumber, episodeNumber]);
       }
       if (!row) return null;
-      const likes = db.prepare('SELECT userId FROM episode_likes WHERE episodeId = ?').all(row.id) as any[];
+      const likes = await query('SELECT "userId" FROM episode_likes WHERE "episodeId" = $1', [row.id]);
       const story = await prisma.story.findUnique({ where: { id: row.storyId } });
 
       return {
@@ -806,10 +736,10 @@ export const prisma = {
     create: async ({ data }: { data: any }) => {
       const id = data.id || crypto.randomUUID();
       const now = new Date().toISOString();
-      db.prepare(`
-        INSERT INTO episodes (id, storyId, seasonNumber, episodeNumber, title, content, status, onHoldReason, viewsCount, likesCount, createdAt, updatedAt)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?)
-      `).run(
+      await execute(`
+        INSERT INTO episodes (id, "storyId", "seasonNumber", "episodeNumber", title, content, status, "onHoldReason", "viewsCount", "likesCount", "createdAt", "updatedAt")
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 0, 0, $9, $10)
+      `, [
         id,
         data.storyId,
         data.seasonNumber || 1,
@@ -820,12 +750,12 @@ export const prisma = {
         data.onHoldReason || null,
         now,
         now
-      );
+      ]);
       return prisma.episode.findUnique({ where: { id } });
     },
 
     update: async ({ where, data }: { where: { id: string }; data: any }) => {
-      const current = db.prepare('SELECT * FROM episodes WHERE id = ?').get(where.id) as any;
+      const current = await queryOne('SELECT * FROM episodes WHERE id = $1', [where.id]);
       if (!current) throw new Error('Episode not found');
 
       const now = new Date().toISOString();
@@ -836,12 +766,12 @@ export const prisma = {
       let newViews = current.viewsCount;
       if (data.viewsCount?.increment) newViews += data.viewsCount.increment;
 
-      db.prepare('UPDATE episodes SET likesCount = ?, viewsCount = ?, updatedAt = ? WHERE id = ?').run(
+      await execute('UPDATE episodes SET "likesCount" = $1, "viewsCount" = $2, "updatedAt" = $3 WHERE id = $4', [
         newLikes,
         newViews,
         now,
         where.id
-      );
+      ]);
 
       return prisma.episode.findUnique({ where: { id: where.id } });
     }
@@ -850,44 +780,44 @@ export const prisma = {
   storySafetyFlag: {
     create: async ({ data }: { data: any }) => {
       const id = crypto.randomUUID();
-      db.prepare('INSERT OR IGNORE INTO story_safety_flags (id, storyId, flag) VALUES (?, ?, ?)').run(id, data.storyId, data.flag);
+      await execute('INSERT INTO story_safety_flags (id, "storyId", flag) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING', [id, data.storyId, data.flag]);
     },
     deleteMany: async ({ where }: { where: { storyId: string } }) => {
-      db.prepare('DELETE FROM story_safety_flags WHERE storyId = ?').run(where.storyId);
+      await execute('DELETE FROM story_safety_flags WHERE "storyId" = $1', [where.storyId]);
     }
   },
 
   tag: {
     findMany: async ({ orderBy = {}, take = 20 }: any = {}) => {
-      const rows = db.prepare(`
-        SELECT t.*, COUNT(st.storyId) as storyCount
+      const rows = await query(`
+        SELECT t.*, COUNT(st."storyId") as "storyCount"
         FROM tags t
-        LEFT JOIN story_tags st ON t.id = st.tagId
+        LEFT JOIN story_tags st ON t.id = st."tagId"
         GROUP BY t.id
-        ORDER BY storyCount DESC
-        LIMIT ${take}
-      `).all() as any[];
+        ORDER BY "storyCount" DESC
+        LIMIT $1
+      `, [take]);
 
       return rows.map((r) => ({
         id: r.id,
         name: r.name,
-        _count: { stories: r.storyCount }
+        _count: { stories: Number(r.storyCount) }
       }));
     },
 
     findUnique: async ({ where }: { where: { name?: string; id?: string } }) => {
       if (where.name) {
-        return db.prepare('SELECT * FROM tags WHERE name = ?').get(where.name.toLowerCase()) as any;
+        return await queryOne('SELECT * FROM tags WHERE name = $1', [where.name.toLowerCase()]);
       }
       if (where.id) {
-        return db.prepare('SELECT * FROM tags WHERE id = ?').get(where.id) as any;
+        return await queryOne('SELECT * FROM tags WHERE id = $1', [where.id]);
       }
       return null;
     },
 
     create: async ({ data }: { data: { name: string } }) => {
       const id = crypto.randomUUID();
-      db.prepare('INSERT INTO tags (id, name) VALUES (?, ?)').run(id, data.name.toLowerCase());
+      await execute('INSERT INTO tags (id, name) VALUES ($1, $2)', [id, data.name.toLowerCase()]);
       return { id, name: data.name.toLowerCase() };
     }
   },
@@ -895,40 +825,40 @@ export const prisma = {
   storyTag: {
     create: async ({ data }: { data: any }) => {
       const id = crypto.randomUUID();
-      db.prepare('INSERT OR IGNORE INTO story_tags (id, storyId, tagId) VALUES (?, ?, ?)').run(id, data.storyId, data.tagId);
+      await execute('INSERT INTO story_tags (id, "storyId", "tagId") VALUES ($1, $2, $3) ON CONFLICT DO NOTHING', [id, data.storyId, data.tagId]);
     },
     deleteMany: async ({ where }: { where: { storyId: string } }) => {
-      db.prepare('DELETE FROM story_tags WHERE storyId = ?').run(where.storyId);
+      await execute('DELETE FROM story_tags WHERE "storyId" = $1', [where.storyId]);
     }
   },
 
   storyLike: {
     findUnique: async ({ where }: any) => {
       const { userId, storyId } = where.userId_storyId;
-      return db.prepare('SELECT * FROM story_likes WHERE userId = ? AND storyId = ?').get(userId, storyId) as any;
+      return await queryOne('SELECT * FROM story_likes WHERE "userId" = $1 AND "storyId" = $2', [userId, storyId]);
     },
     create: async ({ data }: { data: any }) => {
       const id = crypto.randomUUID();
       const now = new Date().toISOString();
-      db.prepare('INSERT OR IGNORE INTO story_likes (id, userId, storyId, createdAt) VALUES (?, ?, ?, ?)').run(id, data.userId, data.storyId, now);
+      await execute('INSERT INTO story_likes (id, "userId", "storyId", "createdAt") VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING', [id, data.userId, data.storyId, now]);
     },
     delete: async ({ where }: { where: { id: string } }) => {
-      db.prepare('DELETE FROM story_likes WHERE id = ?').run(where.id);
+      await execute('DELETE FROM story_likes WHERE id = $1', [where.id]);
     }
   },
 
   episodeLike: {
     findUnique: async ({ where }: any) => {
       const { userId, episodeId } = where.userId_episodeId;
-      return db.prepare('SELECT * FROM episode_likes WHERE userId = ? AND episodeId = ?').get(userId, episodeId) as any;
+      return await queryOne('SELECT * FROM episode_likes WHERE "userId" = $1 AND "episodeId" = $2', [userId, episodeId]);
     },
     create: async ({ data }: { data: any }) => {
       const id = crypto.randomUUID();
       const now = new Date().toISOString();
-      db.prepare('INSERT OR IGNORE INTO episode_likes (id, userId, episodeId, createdAt) VALUES (?, ?, ?, ?)').run(id, data.userId, data.episodeId, now);
+      await execute('INSERT INTO episode_likes (id, "userId", "episodeId", "createdAt") VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING', [id, data.userId, data.episodeId, now]);
     },
     delete: async ({ where }: { where: { id: string } }) => {
-      db.prepare('DELETE FROM episode_likes WHERE id = ?').run(where.id);
+      await execute('DELETE FROM episode_likes WHERE id = $1', [where.id]);
     }
   },
 
@@ -936,13 +866,13 @@ export const prisma = {
     create: async ({ data }: { data: any }) => {
       const id = crypto.randomUUID();
       const now = new Date().toISOString();
-      db.prepare('INSERT INTO story_views (id, userId, storyId, ipAddress, createdAt) VALUES (?, ?, ?, ?, ?)').run(
+      await execute('INSERT INTO story_views (id, "userId", "storyId", "ipAddress", "createdAt") VALUES ($1, $2, $3, $4, $5)', [
         id,
         data.userId || null,
         data.storyId,
         data.ipAddress || null,
         now
-      );
+      ]);
     }
   },
 
@@ -950,40 +880,41 @@ export const prisma = {
     create: async ({ data }: { data: any }) => {
       const id = crypto.randomUUID();
       const now = new Date().toISOString();
-      db.prepare('INSERT INTO episode_views (id, userId, episodeId, ipAddress, createdAt) VALUES (?, ?, ?, ?, ?)').run(
+      await execute('INSERT INTO episode_views (id, "userId", "episodeId", "ipAddress", "createdAt") VALUES ($1, $2, $3, $4, $5)', [
         id,
         data.userId || null,
         data.episodeId,
         data.ipAddress || null,
         now
-      );
+      ]);
     }
   },
 
   comment: {
     findMany: async ({ where = {} }: any): Promise<any[]> => {
-      let query = 'SELECT * FROM comments WHERE storyId = ?';
+      let sql = 'SELECT * FROM comments WHERE "storyId" = $1';
       const params: any[] = [where.storyId];
+      let idx = 2;
 
       if (where.parentId === null) {
-        query += ' AND parentId IS NULL';
+        sql += ' AND "parentId" IS NULL';
       } else if (where.parentId) {
-        query += ' AND parentId = ?';
+        sql += ` AND "parentId" = $${idx++}`;
         params.push(where.parentId);
       }
 
       if (where.episodeId) {
-        query += ' AND episodeId = ?';
+        sql += ` AND "episodeId" = $${idx++}`;
         params.push(where.episodeId);
       }
 
-      query += ' ORDER BY createdAt DESC';
-      const rows = db.prepare(query).all(...params) as any[];
+      sql += ' ORDER BY "createdAt" DESC';
+      const rows = await query(sql, params);
 
       return Promise.all(
         rows.map(async (c: any): Promise<any> => {
           const user = await prisma.user.findUnique({ where: { id: c.userId } });
-          const likes = db.prepare('SELECT userId FROM comment_likes WHERE commentId = ?').all(c.id) as any[];
+          const likes = await query('SELECT "userId" FROM comment_likes WHERE "commentId" = $1', [c.id]);
           const replies: any[] = await prisma.comment.findMany({ where: { storyId: c.storyId, parentId: c.id } });
 
           return {
@@ -998,10 +929,10 @@ export const prisma = {
     },
 
     findUnique: async ({ where }: { where: { id: string } }) => {
-      const row = db.prepare('SELECT * FROM comments WHERE id = ?').get(where.id) as any;
+      const row = await queryOne('SELECT * FROM comments WHERE id = $1', [where.id]);
       if (!row) return null;
       const user = await prisma.user.findUnique({ where: { id: row.userId } });
-      const likes = db.prepare('SELECT userId FROM comment_likes WHERE commentId = ?').all(row.id) as any[];
+      const likes = await query('SELECT "userId" FROM comment_likes WHERE "commentId" = $1', [row.id]);
       return {
         ...row,
         user,
@@ -1013,10 +944,10 @@ export const prisma = {
     create: async ({ data }: { data: any }) => {
       const id = crypto.randomUUID();
       const now = new Date().toISOString();
-      db.prepare(`
-        INSERT INTO comments (id, storyId, episodeId, userId, parentId, content, createdAt, updatedAt)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(
+      await execute(`
+        INSERT INTO comments (id, "storyId", "episodeId", "userId", "parentId", content, "createdAt", "updatedAt")
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      `, [
         id,
         data.storyId,
         data.episodeId || null,
@@ -1025,7 +956,7 @@ export const prisma = {
         data.content,
         now,
         now
-      );
+      ]);
       return prisma.comment.findUnique({ where: { id } });
     }
   },
@@ -1033,46 +964,46 @@ export const prisma = {
   commentLike: {
     findUnique: async ({ where }: any) => {
       const { userId, commentId } = where.userId_commentId;
-      return db.prepare('SELECT * FROM comment_likes WHERE userId = ? AND commentId = ?').get(userId, commentId) as any;
+      return await queryOne('SELECT * FROM comment_likes WHERE "userId" = $1 AND "commentId" = $2', [userId, commentId]);
     },
     create: async ({ data }: { data: any }) => {
       const id = crypto.randomUUID();
       const now = new Date().toISOString();
-      db.prepare('INSERT OR IGNORE INTO comment_likes (id, userId, commentId, createdAt) VALUES (?, ?, ?, ?)').run(id, data.userId, data.commentId, now);
+      await execute('INSERT INTO comment_likes (id, "userId", "commentId", "createdAt") VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING', [id, data.userId, data.commentId, now]);
     },
     delete: async ({ where }: { where: { id: string } }) => {
-      db.prepare('DELETE FROM comment_likes WHERE id = ?').run(where.id);
+      await execute('DELETE FROM comment_likes WHERE id = $1', [where.id]);
     },
     count: async ({ where }: { where: { commentId: string } }) => {
-      const res = db.prepare('SELECT COUNT(*) as c FROM comment_likes WHERE commentId = ?').get(where.commentId) as any;
-      return res.c;
+      const res = await queryOne('SELECT COUNT(*) as c FROM comment_likes WHERE "commentId" = $1', [where.commentId]);
+      return Number(res?.c || 0);
     }
   },
 
   follow: {
     findUnique: async ({ where }: any) => {
       const { followerId, followingId } = where.followerId_followingId;
-      return db.prepare('SELECT * FROM follows WHERE followerId = ? AND followingId = ?').get(followerId, followingId) as any;
+      return await queryOne('SELECT * FROM follows WHERE "followerId" = $1 AND "followingId" = $2', [followerId, followingId]);
     },
     create: async ({ data }: { data: any }) => {
       const id = crypto.randomUUID();
       const now = new Date().toISOString();
-      db.prepare('INSERT OR IGNORE INTO follows (id, followerId, followingId, createdAt) VALUES (?, ?, ?, ?)').run(id, data.followerId, data.followingId, now);
+      await execute('INSERT INTO follows (id, "followerId", "followingId", "createdAt") VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING', [id, data.followerId, data.followingId, now]);
     },
     delete: async ({ where }: { where: { id: string } }) => {
-      db.prepare('DELETE FROM follows WHERE id = ?').run(where.id);
+      await execute('DELETE FROM follows WHERE id = $1', [where.id]);
     },
     findMany: async ({ where }: { where: { followerId: string } }) => {
-      return db.prepare('SELECT * FROM follows WHERE followerId = ?').all(where.followerId) as any[];
+      return await query('SELECT * FROM follows WHERE "followerId" = $1', [where.followerId]);
     },
     count: async ({ where }: any) => {
       if (where.followingId) {
-        const res = db.prepare('SELECT COUNT(*) as c FROM follows WHERE followingId = ?').get(where.followingId) as any;
-        return res.c;
+        const res = await queryOne('SELECT COUNT(*) as c FROM follows WHERE "followingId" = $1', [where.followingId]);
+        return Number(res?.c || 0);
       }
       if (where.followerId) {
-        const res = db.prepare('SELECT COUNT(*) as c FROM follows WHERE followerId = ?').get(where.followerId) as any;
-        return res.c;
+        const res = await queryOne('SELECT COUNT(*) as c FROM follows WHERE "followerId" = $1', [where.followerId]);
+        return Number(res?.c || 0);
       }
       return 0;
     }
@@ -1081,18 +1012,18 @@ export const prisma = {
   bookmark: {
     findUnique: async ({ where }: any) => {
       const { userId, storyId } = where.userId_storyId;
-      return db.prepare('SELECT * FROM bookmarks WHERE userId = ? AND storyId = ?').get(userId, storyId) as any;
+      return await queryOne('SELECT * FROM bookmarks WHERE "userId" = $1 AND "storyId" = $2', [userId, storyId]);
     },
     create: async ({ data }: { data: any }) => {
       const id = crypto.randomUUID();
       const now = new Date().toISOString();
-      db.prepare('INSERT OR IGNORE INTO bookmarks (id, userId, storyId, createdAt) VALUES (?, ?, ?, ?)').run(id, data.userId, data.storyId, now);
+      await execute('INSERT INTO bookmarks (id, "userId", "storyId", "createdAt") VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING', [id, data.userId, data.storyId, now]);
     },
     delete: async ({ where }: { where: { id: string } }) => {
-      db.prepare('DELETE FROM bookmarks WHERE id = ?').run(where.id);
+      await execute('DELETE FROM bookmarks WHERE id = $1', [where.id]);
     },
     findMany: async ({ where }: { where: { userId: string } }) => {
-      const rows = db.prepare('SELECT storyId FROM bookmarks WHERE userId = ? ORDER BY createdAt DESC').all(where.userId) as any[];
+      const rows = await query('SELECT "storyId" FROM bookmarks WHERE "userId" = $1 ORDER BY "createdAt" DESC', [where.userId]);
       return Promise.all(
         rows.map(async (r) => {
           const story = await prisma.story.findUnique({ where: { id: r.storyId } });
@@ -1106,10 +1037,10 @@ export const prisma = {
     create: async ({ data }: { data: any }) => {
       const id = crypto.randomUUID();
       const now = new Date().toISOString();
-      db.prepare(`
-        INSERT INTO reports (id, reporterId, storyId, episodeId, category, priority, status, reason, createdAt, updatedAt)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(
+      await execute(`
+        INSERT INTO reports (id, "reporterId", "storyId", "episodeId", category, priority, status, reason, "createdAt", "updatedAt")
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+      `, [
         id,
         data.reporterId,
         data.storyId,
@@ -1120,35 +1051,37 @@ export const prisma = {
         data.reason,
         now,
         now
-      );
+      ]);
       return prisma.report.findUnique({ where: { id } });
     },
 
     findMany: async ({ where = {}, skip = 0, take = 20 }: any = {}) => {
-      let query = 'SELECT * FROM reports WHERE 1=1';
+      let sql = 'SELECT * FROM reports WHERE 1=1';
       const params: any[] = [];
+      let idx = 1;
       if (where.priority) {
-        query += ' AND priority = ?';
+        sql += ` AND priority = $${idx++}`;
         params.push(where.priority);
       }
       if (where.status) {
-        query += ' AND status = ?';
+        sql += ` AND status = $${idx++}`;
         params.push(where.status);
       }
-      query += " ORDER BY CASE WHEN priority = 'HIGH' THEN 0 ELSE 1 END, createdAt ASC";
-      query += ` LIMIT ${take} OFFSET ${skip}`;
+      sql += ` ORDER BY CASE WHEN priority = 'HIGH' THEN 0 ELSE 1 END, "createdAt" ASC`;
+      sql += ` LIMIT $${idx++} OFFSET $${idx++}`;
+      params.push(take, skip);
 
-      const rows = db.prepare(query).all(...params) as any[];
+      const rows = await query(sql, params);
       return Promise.all(rows.map((r) => prisma.report.findUnique({ where: { id: r.id } })));
     },
 
     findUnique: async ({ where }: { where: { id: string } }) => {
-      const row = db.prepare('SELECT * FROM reports WHERE id = ?').get(where.id) as any;
+      const row = await queryOne('SELECT * FROM reports WHERE id = $1', [where.id]);
       if (!row) return null;
       const reporter = await prisma.user.findUnique({ where: { id: row.reporterId } });
       const story = await prisma.story.findUnique({ where: { id: row.storyId } });
       const episode = row.episodeId ? await prisma.episode.findUnique({ where: { id: row.episodeId } }) : null;
-      const actions = db.prepare('SELECT * FROM moderation_actions WHERE reportId = ?').all(row.id) as any[];
+      const actions = await query('SELECT * FROM moderation_actions WHERE "reportId" = $1', [row.id]);
 
       return {
         ...row,
@@ -1160,22 +1093,23 @@ export const prisma = {
     },
 
     count: async ({ where = {} }: any = {}) => {
-      let query = 'SELECT COUNT(*) as c FROM reports WHERE 1=1';
+      let sql = 'SELECT COUNT(*) as c FROM reports WHERE 1=1';
       const params: any[] = [];
+      let idx = 1;
       if (where.priority) {
-        query += ' AND priority = ?';
+        sql += ` AND priority = $${idx++}`;
         params.push(where.priority);
       }
       if (where.status) {
-        query += ' AND status = ?';
+        sql += ` AND status = $${idx++}`;
         params.push(where.status);
       }
-      const res = db.prepare(query).get(...params) as any;
-      return res.c;
+      const res = await queryOne(sql, params);
+      return Number(res?.c || 0);
     },
 
     update: async ({ where, data }: { where: { id: string }; data: any }) => {
-      const current = db.prepare('SELECT * FROM reports WHERE id = ?').get(where.id) as any;
+      const current = await queryOne('SELECT * FROM reports WHERE id = $1', [where.id]);
       if (!current) throw new Error('Report not found');
 
       const now = new Date().toISOString();
@@ -1184,14 +1118,14 @@ export const prisma = {
       const newResolver = data.resolvedById !== undefined ? data.resolvedById : current.resolvedById;
       const newResolvedAt = data.resolvedAt !== undefined ? new Date(data.resolvedAt).toISOString() : current.resolvedAt;
 
-      db.prepare('UPDATE reports SET status = ?, moderatorNotes = ?, resolvedById = ?, resolvedAt = ?, updatedAt = ? WHERE id = ?').run(
+      await execute('UPDATE reports SET status = $1, "moderatorNotes" = $2, "resolvedById" = $3, "resolvedAt" = $4, "updatedAt" = $5 WHERE id = $6', [
         newStatus,
         newNotes,
         newResolver,
         newResolvedAt,
         now,
         where.id
-      );
+      ]);
 
       return prisma.report.findUnique({ where: { id: where.id } });
     }
@@ -1201,10 +1135,10 @@ export const prisma = {
     create: async ({ data }: { data: any }) => {
       const id = crypto.randomUUID();
       const now = new Date().toISOString();
-      db.prepare(`
-        INSERT INTO moderation_actions (id, reportId, moderatorId, actionType, targetType, targetId, notes, createdAt)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(
+      await execute(`
+        INSERT INTO moderation_actions (id, "reportId", "moderatorId", "actionType", "targetType", "targetId", notes, "createdAt")
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      `, [
         id,
         data.reportId || null,
         data.moderatorId,
@@ -1213,7 +1147,7 @@ export const prisma = {
         data.targetId,
         data.notes,
         now
-      );
+      ]);
     }
   }
 };
