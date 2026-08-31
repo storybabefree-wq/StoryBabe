@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { X, AlertCircle, CheckCircle2, Eye, EyeOff, ArrowRight, ArrowLeft } from 'lucide-react';
 import OtpVerifyModal from './OtpVerifyModal';
@@ -42,6 +42,7 @@ export default function AuthModal({ onClose }: AuthModalProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
+  const isSubmittingRef = useRef(false);
 
   // Clear all states when closing
   const handleModalClose = () => {
@@ -50,17 +51,21 @@ export default function AuthModal({ onClose }: AuthModalProps) {
     setNewPassword('');
     setConfirmPassword('');
     setShowOtpModal(false);
+    isSubmittingRef.current = false;
     onClose();
   };
 
   // Handle Login Submit
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isLoading || isSubmittingRef.current) return;
+
     if (!loginInput.trim() || !loginPassword) {
       setError('Please enter both your email/username and password.');
       return;
     }
 
+    isSubmittingRef.current = true;
     setIsLoading(true);
     setError('');
     try {
@@ -70,12 +75,14 @@ export default function AuthModal({ onClose }: AuthModalProps) {
       setError(err.message || 'Authentication failed. Please check your credentials.');
     } finally {
       setIsLoading(false);
+      isSubmittingRef.current = false;
     }
   };
 
   // Handle Register Step 1: Send OTP & Open Popup Modal
   const handleRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isLoading || isSubmittingRef.current) return;
     setError('');
 
     const cleanDisplay = displayName.trim();
@@ -102,6 +109,7 @@ export default function AuthModal({ onClose }: AuthModalProps) {
       return;
     }
 
+    isSubmittingRef.current = true;
     setIsLoading(true);
     try {
       await sendRegisterOtp({
@@ -115,9 +123,16 @@ export default function AuthModal({ onClose }: AuthModalProps) {
       setOtpModalType('REGISTRATION');
       setShowOtpModal(true);
     } catch (err: any) {
-      setError(err.message || 'Failed to dispatch verification code.');
+      if (err.message && (err.message.includes('already sent') || err.message.includes('COOLDOWN_ACTIVE') || err.message.includes('REQUEST_IN_PROGRESS'))) {
+        setPendingOtpEmail(cleanEmail);
+        setOtpModalType('REGISTRATION');
+        setShowOtpModal(true);
+      } else {
+        setError(err.message || 'Failed to dispatch verification code.');
+      }
     } finally {
       setIsLoading(false);
+      isSubmittingRef.current = false;
     }
   };
 
@@ -159,6 +174,7 @@ export default function AuthModal({ onClose }: AuthModalProps) {
   // Handle Forgot Password Step 1: Send Reset Code
   const handleForgotRequestSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isLoading || isSubmittingRef.current) return;
     setError('');
 
     const cleanEmail = forgotEmail.trim();
@@ -167,6 +183,7 @@ export default function AuthModal({ onClose }: AuthModalProps) {
       return;
     }
 
+    isSubmittingRef.current = true;
     setIsLoading(true);
     try {
       await sendForgotPasswordOtp(cleanEmail);
@@ -174,9 +191,16 @@ export default function AuthModal({ onClose }: AuthModalProps) {
       setView('FORGOT_RESET');
       setSuccessMessage('A 6-digit password reset code was sent to your email.');
     } catch (err: any) {
-      setError(err.message || 'Failed to send password reset code.');
+      if (err.message && (err.message.includes('already sent') || err.message.includes('COOLDOWN_ACTIVE') || err.message.includes('REQUEST_IN_PROGRESS'))) {
+        setPendingOtpEmail(cleanEmail);
+        setView('FORGOT_RESET');
+        setSuccessMessage('A password reset code was already sent to your email.');
+      } else {
+        setError(err.message || 'Failed to send password reset code.');
+      }
     } finally {
       setIsLoading(false);
+      isSubmittingRef.current = false;
     }
   };
 

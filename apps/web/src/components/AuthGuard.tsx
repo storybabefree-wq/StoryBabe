@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import {
   Lock,
@@ -58,6 +58,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
+  const isSubmittingRef = useRef(false);
 
   // Reset all forms and sensitive states on logout or user session change
   useEffect(() => {
@@ -70,6 +71,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
       setError('');
       setSuccessMessage('');
       setView('LOGIN');
+      isSubmittingRef.current = false;
     }
   }, [user]);
 
@@ -110,11 +112,14 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
   // Handle Login
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmitting || isSubmittingRef.current) return;
+
     if (!loginIdentifier.trim() || !loginPassword) {
       setError('Please enter both your email/username and password.');
       return;
     }
 
+    isSubmittingRef.current = true;
     setIsSubmitting(true);
     setError('');
     setSuccessMessage('');
@@ -125,12 +130,14 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
       setError(err.message || 'Invalid credentials. Please check your username/email and password.');
     } finally {
       setIsSubmitting(false);
+      isSubmittingRef.current = false;
     }
   };
 
   // Handle Register Step 1: Send OTP & Open Popup Modal
   const handleRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmitting || isSubmittingRef.current) return;
     setError('');
     setSuccessMessage('');
 
@@ -158,6 +165,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
       return;
     }
 
+    isSubmittingRef.current = true;
     setIsSubmitting(true);
     try {
       await sendRegisterOtp({
@@ -171,9 +179,16 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
       setOtpModalType('REGISTRATION');
       setShowOtpModal(true);
     } catch (err: any) {
-      setError(err.message || 'Failed to dispatch verification code.');
+      if (err.message && (err.message.includes('already sent') || err.message.includes('COOLDOWN_ACTIVE') || err.message.includes('REQUEST_IN_PROGRESS'))) {
+        setPendingOtpEmail(cleanEmail);
+        setOtpModalType('REGISTRATION');
+        setShowOtpModal(true);
+      } else {
+        setError(err.message || 'Failed to dispatch verification code.');
+      }
     } finally {
       setIsSubmitting(false);
+      isSubmittingRef.current = false;
     }
   };
 
@@ -214,6 +229,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
   // Handle Forgot Password Request
   const handleForgotRequestSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmitting || isSubmittingRef.current) return;
     setError('');
 
     const cleanEmail = forgotEmail.trim();
@@ -222,16 +238,24 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
       return;
     }
 
+    isSubmittingRef.current = true;
     setIsSubmitting(true);
     try {
       await sendForgotPasswordOtp(cleanEmail);
       setPendingOtpEmail(cleanEmail);
       setView('FORGOT_RESET');
-      setSuccessMessage('A password reset verification code was sent to your email.');
+      setSuccessMessage('A 6-digit password reset code was sent to your email.');
     } catch (err: any) {
-      setError(err.message || 'Failed to send password reset code.');
+      if (err.message && (err.message.includes('already sent') || err.message.includes('COOLDOWN_ACTIVE') || err.message.includes('REQUEST_IN_PROGRESS'))) {
+        setPendingOtpEmail(cleanEmail);
+        setView('FORGOT_RESET');
+        setSuccessMessage('A password reset code was already sent to your email.');
+      } else {
+        setError(err.message || 'Failed to send password reset code.');
+      }
     } finally {
       setIsSubmitting(false);
+      isSubmittingRef.current = false;
     }
   };
 

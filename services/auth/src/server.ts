@@ -32,6 +32,9 @@ const app = express();
 const PORT = process.env.PORT || 4001;
 const isDev = process.env.NODE_ENV !== 'production';
 
+// In-flight dispatch mutex to completely prevent duplicate concurrent OTP emails on rapid user clicks
+const inFlightOtpDispatches = new Set<string>();
+
 app.use(cors());
 app.use(express.json());
 
@@ -62,6 +65,40 @@ app.post('/register/send-otp', async (req: any, res: any): Promise<void> => {
     const { email, username, displayName, password } = parseResult.data;
     const lowerEmail = email.toLowerCase().trim();
     const lowerUsername = username.toLowerCase().trim();
+    const lockKey = `${lowerEmail}:REGISTRATION`;
+
+    // 1. In-flight dispatch lock (prevents duplicate execution if user double-clicks)
+    if (inFlightOtpDispatches.has(lockKey)) {
+      res.status(429).json({
+        success: false,
+        error: {
+          code: 'REQUEST_IN_PROGRESS',
+          message: 'A verification code is already being sent to your email. Please check your inbox in a moment.'
+        }
+      });
+      return;
+    }
+
+    // 2. Cooldown check (prevent spam/duplicate emails if requested within last 45 seconds)
+    const existingOtp = await prisma.otpVerification.findFirst({
+      where: { email: lowerEmail, type: 'REGISTRATION', verified: false }
+    });
+
+    if (existingOtp) {
+      const createdTime = new Date(existingOtp.createdAt).getTime();
+      const elapsedSeconds = Math.floor((Date.now() - createdTime) / 1000);
+      if (elapsedSeconds < 45) {
+        const remainingSeconds = 45 - elapsedSeconds;
+        res.status(429).json({
+          success: false,
+          error: {
+            code: 'COOLDOWN_ACTIVE',
+            message: `A verification code was already sent. Please check your inbox or wait ${remainingSeconds} seconds before requesting another code.`
+          }
+        });
+        return;
+      }
+    }
 
     // Check 5 accounts limit per email
     const emailAccountsCount = await prisma.user.count({ where: { email: lowerEmail } });
@@ -85,61 +122,66 @@ app.post('/register/send-otp', async (req: any, res: any): Promise<void> => {
       return;
     }
 
-    const passwordHash = await hashPassword(password);
-    const code = generateOtpCode();
-    const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString(); // 10 minutes
+    inFlightOtpDispatches.add(lockKey);
+    try {
+      const passwordHash = await hashPassword(password);
+      const code = generateOtpCode();
+      const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString(); // 10 minutes
 
-    // Delete prior pending registration OTPs for this email
-    await prisma.otpVerification.deleteMany({
-      where: { email: lowerEmail, type: 'REGISTRATION' }
-    });
+      // Delete prior pending registration OTPs for this email
+      await prisma.otpVerification.deleteMany({
+        where: { email: lowerEmail, type: 'REGISTRATION' }
+      });
 
-    const payload = JSON.stringify({
-      username: lowerUsername,
-      displayName: displayName.trim(),
-      passwordHash
-    });
+      const payload = JSON.stringify({
+        username: lowerUsername,
+        displayName: displayName.trim(),
+        passwordHash
+      });
 
-    await prisma.otpVerification.create({
-      data: {
-        email: lowerEmail,
-        code,
-        type: 'REGISTRATION',
-        payload,
-        expiresAt,
-        attempts: 0,
-        verified: false
-      }
-    });
-
-    // Send Email
-    const emailResult = await sendOtpEmail({
-      to: lowerEmail,
-      code,
-      type: 'REGISTRATION',
-      displayName
-    });
-
-    if (!emailResult.success) {
-      res.status(500).json({
-        success: false,
-        error: {
-          code: 'EMAIL_DELIVERY_FAILED',
-          message: emailResult.error || 'Failed to dispatch verification email. Please check your email configuration in Render.'
+      await prisma.otpVerification.create({
+        data: {
+          email: lowerEmail,
+          code,
+          type: 'REGISTRATION',
+          payload,
+          expiresAt,
+          attempts: 0,
+          verified: false
         }
       });
-      return;
-    }
 
-    res.status(200).json({
-      success: true,
-      data: {
-        email: lowerEmail,
-        expiresInSeconds: 600,
-        devOtp: isDev && !process.env.RESEND_API_KEY ? code : undefined,
-        message: 'A 6-digit verification code has been sent to your email.'
+      // Send Email
+      const emailResult = await sendOtpEmail({
+        to: lowerEmail,
+        code,
+        type: 'REGISTRATION',
+        displayName
+      });
+
+      if (!emailResult.success) {
+        res.status(500).json({
+          success: false,
+          error: {
+            code: 'EMAIL_DELIVERY_FAILED',
+            message: emailResult.error || 'Failed to dispatch verification email. Please check your email configuration in Render.'
+          }
+        });
+        return;
       }
-    });
+
+      res.status(200).json({
+        success: true,
+        data: {
+          email: lowerEmail,
+          expiresInSeconds: 600,
+          devOtp: isDev && !process.env.RESEND_API_KEY ? code : undefined,
+          message: 'A 6-digit verification code has been sent to your email.'
+        }
+      });
+    } finally {
+      inFlightOtpDispatches.delete(lockKey);
+    }
   } catch (error: any) {
     console.error('Send Register OTP error:', error);
     res.status(500).json({
@@ -313,6 +355,41 @@ app.post('/forgot-password/send-otp', async (req: any, res: any): Promise<void> 
     }
 
     const lowerEmail = parseResult.data.email.toLowerCase().trim();
+    const lockKey = `${lowerEmail}:PASSWORD_RESET`;
+
+    // 1. In-flight dispatch lock
+    if (inFlightOtpDispatches.has(lockKey)) {
+      res.status(429).json({
+        success: false,
+        error: {
+          code: 'REQUEST_IN_PROGRESS',
+          message: 'A password reset code is already being sent. Please check your inbox in a moment.'
+        }
+      });
+      return;
+    }
+
+    // 2. Cooldown check
+    const existingOtp = await prisma.otpVerification.findFirst({
+      where: { email: lowerEmail, type: 'PASSWORD_RESET', verified: false }
+    });
+
+    if (existingOtp) {
+      const createdTime = new Date(existingOtp.createdAt).getTime();
+      const elapsedSeconds = Math.floor((Date.now() - createdTime) / 1000);
+      if (elapsedSeconds < 45) {
+        const remainingSeconds = 45 - elapsedSeconds;
+        res.status(429).json({
+          success: false,
+          error: {
+            code: 'COOLDOWN_ACTIVE',
+            message: `A password reset code was already sent. Please check your inbox or wait ${remainingSeconds} seconds before requesting another code.`
+          }
+        });
+        return;
+      }
+    }
+
     const user = await prisma.user.findUnique({ where: { email: lowerEmail } });
 
     if (!user) {
@@ -328,51 +405,56 @@ app.post('/forgot-password/send-otp', async (req: any, res: any): Promise<void> 
       return;
     }
 
-    const code = generateOtpCode();
-    const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+    inFlightOtpDispatches.add(lockKey);
+    try {
+      const code = generateOtpCode();
+      const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
 
-    await prisma.otpVerification.deleteMany({
-      where: { email: lowerEmail, type: 'PASSWORD_RESET' }
-    });
+      await prisma.otpVerification.deleteMany({
+        where: { email: lowerEmail, type: 'PASSWORD_RESET' }
+      });
 
-    await prisma.otpVerification.create({
-      data: {
-        email: lowerEmail,
-        code,
-        type: 'PASSWORD_RESET',
-        expiresAt,
-        attempts: 0,
-        verified: false
-      }
-    });
-
-    const emailResult = await sendOtpEmail({
-      to: lowerEmail,
-      code,
-      type: 'PASSWORD_RESET',
-      displayName: user.displayName
-    });
-
-    if (!emailResult.success) {
-      res.status(500).json({
-        success: false,
-        error: {
-          code: 'EMAIL_DELIVERY_FAILED',
-          message: emailResult.error || 'Failed to dispatch password reset email. Please check your email configuration in Render.'
+      await prisma.otpVerification.create({
+        data: {
+          email: lowerEmail,
+          code,
+          type: 'PASSWORD_RESET',
+          expiresAt,
+          attempts: 0,
+          verified: false
         }
       });
-      return;
-    }
 
-    res.status(200).json({
-      success: true,
-      data: {
-        email: lowerEmail,
-        expiresInSeconds: 600,
-        devOtp: isDev && !process.env.RESEND_API_KEY ? code : undefined,
-        message: 'A password reset code has been sent to your email.'
+      const emailResult = await sendOtpEmail({
+        to: lowerEmail,
+        code,
+        type: 'PASSWORD_RESET',
+        displayName: user.displayName
+      });
+
+      if (!emailResult.success) {
+        res.status(500).json({
+          success: false,
+          error: {
+            code: 'EMAIL_DELIVERY_FAILED',
+            message: emailResult.error || 'Failed to dispatch password reset email. Please check your email configuration in Render.'
+          }
+        });
+        return;
       }
-    });
+
+      res.status(200).json({
+        success: true,
+        data: {
+          email: lowerEmail,
+          expiresInSeconds: 600,
+          devOtp: isDev && !process.env.RESEND_API_KEY ? code : undefined,
+          message: 'A password reset code has been sent to your email.'
+        }
+      });
+    } finally {
+      inFlightOtpDispatches.delete(lockKey);
+    }
   } catch (error: any) {
     console.error('Send Forgot Password OTP error:', error);
     res.status(500).json({
@@ -498,6 +580,18 @@ app.post('/resend-otp', async (req: any, res: any): Promise<void> => {
 
     const { email, type } = parseResult.data;
     const lowerEmail = email.toLowerCase().trim();
+    const lockKey = `${lowerEmail}:${type}`;
+
+    if (inFlightOtpDispatches.has(lockKey)) {
+      res.status(429).json({
+        success: false,
+        error: {
+          code: 'REQUEST_IN_PROGRESS',
+          message: 'A verification code is currently being sent. Please check your inbox in a moment.'
+        }
+      });
+      return;
+    }
 
     const existingOtp = await prisma.otpVerification.findFirst({
       where: { email: lowerEmail, type, verified: false }
@@ -506,8 +600,8 @@ app.post('/resend-otp', async (req: any, res: any): Promise<void> => {
     if (existingOtp) {
       const createdTime = new Date(existingOtp.createdAt).getTime();
       const elapsedSeconds = Math.floor((Date.now() - createdTime) / 1000);
-      if (elapsedSeconds < 60) {
-        const remainingSeconds = 60 - elapsedSeconds;
+      if (elapsedSeconds < 45) {
+        const remainingSeconds = 45 - elapsedSeconds;
         res.status(429).json({
           success: false,
           error: {
@@ -519,51 +613,56 @@ app.post('/resend-otp', async (req: any, res: any): Promise<void> => {
       }
     }
 
-    const code = generateOtpCode();
-    const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+    inFlightOtpDispatches.add(lockKey);
+    try {
+      const code = generateOtpCode();
+      const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
 
-    await prisma.otpVerification.deleteMany({
-      where: { email: lowerEmail, type }
-    });
+      await prisma.otpVerification.deleteMany({
+        where: { email: lowerEmail, type }
+      });
 
-    await prisma.otpVerification.create({
-      data: {
-        email: lowerEmail,
-        code,
-        type,
-        payload: existingOtp?.payload || null,
-        expiresAt,
-        attempts: 0,
-        verified: false
-      }
-    });
-
-    const emailResult = await sendOtpEmail({
-      to: lowerEmail,
-      code,
-      type
-    });
-
-    if (!emailResult.success) {
-      res.status(500).json({
-        success: false,
-        error: {
-          code: 'EMAIL_DELIVERY_FAILED',
-          message: emailResult.error || 'Failed to dispatch verification email. Please check your email configuration in Render.'
+      await prisma.otpVerification.create({
+        data: {
+          email: lowerEmail,
+          code,
+          type,
+          payload: existingOtp?.payload || null,
+          expiresAt,
+          attempts: 0,
+          verified: false
         }
       });
-      return;
-    }
 
-    res.status(200).json({
-      success: true,
-      data: {
-        email: lowerEmail,
-        expiresInSeconds: 600,
-        devOtp: isDev && !process.env.RESEND_API_KEY ? code : undefined,
-        message: 'A new verification code has been sent to your email.'
+      const emailResult = await sendOtpEmail({
+        to: lowerEmail,
+        code,
+        type
+      });
+
+      if (!emailResult.success) {
+        res.status(500).json({
+          success: false,
+          error: {
+            code: 'EMAIL_DELIVERY_FAILED',
+            message: emailResult.error || 'Failed to dispatch verification email. Please check your email configuration in Render.'
+          }
+        });
+        return;
       }
-    });
+
+      res.status(200).json({
+        success: true,
+        data: {
+          email: lowerEmail,
+          expiresInSeconds: 600,
+          devOtp: isDev && !process.env.RESEND_API_KEY ? code : undefined,
+          message: 'A new verification code has been sent to your email.'
+        }
+      });
+    } finally {
+      inFlightOtpDispatches.delete(lockKey);
+    }
   } catch (error: any) {
     console.error('Resend OTP error:', error);
     res.status(500).json({
