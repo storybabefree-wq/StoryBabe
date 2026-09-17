@@ -18,6 +18,13 @@ import type {
   UserRole
 } from '@storybabe/types';
 
+import dns from 'dns';
+
+// Prioritize IPv4 resolution to prevent ENETUNREACH on platforms without outbound IPv6 (Render, AWS, etc.)
+if (dns && typeof (dns as any).setDefaultResultOrder === 'function') {
+  (dns as any).setDefaultResultOrder('ipv4first');
+}
+
 // Automatically locate and load environment variables if DATABASE_URL is not already in process.env
 if (!process.env.DATABASE_URL) {
   const envCandidates = [
@@ -35,13 +42,59 @@ if (!process.env.DATABASE_URL) {
   }
 }
 
-// PostgreSQL Connection Pool
-const DATABASE_URL = process.env.DATABASE_URL;
-if (!DATABASE_URL) {
+// PostgreSQL Connection Pool & URL Normalization
+let rawDatabaseUrl = process.env.DATABASE_URL || '';
+if (!rawDatabaseUrl) {
   console.error('[Database] FATAL: DATABASE_URL environment variable is required.');
   console.error('[Database] Set DATABASE_URL to your Supabase/Neon PostgreSQL connection string.');
   process.exit(1);
 }
+
+// Strip surrounding quotes
+rawDatabaseUrl = rawDatabaseUrl.trim().replace(/^["']|["']$/g, '');
+
+function normalizeDatabaseUrl(urlStr: string): string {
+  try {
+    // Check if host is direct Supabase (which is IPv6 only and fails with ENETUNREACH on Render)
+    const protocolMatch = urlStr.match(/^(postgres(?:ql)?:\/\/)(.*)$/);
+    if (protocolMatch) {
+      const rest = protocolMatch[2];
+      const lastAtIdx = rest.lastIndexOf('@');
+      if (lastAtIdx !== -1) {
+        const userInfo = rest.slice(0, lastAtIdx);
+        const hostAndDb = rest.slice(lastAtIdx + 1);
+        const colonIdx = userInfo.indexOf(':');
+        if (colonIdx !== -1) {
+          let user = userInfo.slice(0, colonIdx);
+          let pass = userInfo.slice(colonIdx + 1);
+          try {
+            pass = encodeURIComponent(decodeURIComponent(pass));
+          } catch {
+            pass = encodeURIComponent(pass);
+          }
+
+          const hostMatch = hostAndDb.match(/^db\.([a-z0-9]+)\.supabase\.co(?::\d+)?(.*)$/);
+          if (hostMatch) {
+            const projectRef = hostMatch[1];
+            const dbPath = hostMatch[2] || '/postgres';
+            if (!user.includes('.')) {
+              user = `${user}.${projectRef}`;
+            }
+            console.log(`[Database] Auto-routing direct Supabase IPv6 host (${projectRef}) to IPv4 pooler to prevent cloud ENETUNREACH.`);
+            return `${protocolMatch[1]}${user}:${pass}@aws-0-ap-south-1.pooler.supabase.com:6543${dbPath}`;
+          }
+
+          return `${protocolMatch[1]}${user}:${pass}@${hostAndDb}`;
+        }
+      }
+    }
+  } catch (err: any) {
+    console.warn('[Database] URL normalization warning:', err.message);
+  }
+  return urlStr;
+}
+
+const DATABASE_URL = normalizeDatabaseUrl(rawDatabaseUrl);
 
 const pool = new pg.Pool({
   connectionString: DATABASE_URL,
