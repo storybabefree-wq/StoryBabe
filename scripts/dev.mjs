@@ -16,7 +16,7 @@ if (fs.existsSync('StoryBabe.env')) {
 // Check if services are built; if not, build them first
 if (!fs.existsSync('services/auth/dist/server.js')) {
   console.log('Building TypeScript services before startup...');
-  execSync('npm run build:services', { stdio: 'inherit' });
+  execSync('node ./node_modules/typescript/lib/tsc.js -b packages/types packages/security packages/database services/auth services/story services/social services/moderation services/worker apps/gateway', { stdio: 'inherit' });
 }
 
 const services = [

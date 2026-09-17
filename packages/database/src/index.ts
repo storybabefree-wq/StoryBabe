@@ -1,6 +1,10 @@
 import pg from 'pg';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
+import path from 'path';
+import fs from 'fs';
+// @ts-ignore
+import dotenv from 'dotenv';
 import type {
   UserProfile,
   AuthUser,
@@ -14,6 +18,23 @@ import type {
   UserRole
 } from '@storybabe/types';
 
+// Automatically locate and load environment variables if DATABASE_URL is not already in process.env
+if (!process.env.DATABASE_URL) {
+  const envCandidates = [
+    path.resolve(process.cwd(), 'StoryBabe.env'),
+    path.resolve(process.cwd(), '.env'),
+    path.resolve(__dirname, '../../StoryBabe.env'),
+    path.resolve(__dirname, '../../.env'),
+    path.resolve(__dirname, '../.env')
+  ];
+  for (const file of envCandidates) {
+    if (fs.existsSync(file)) {
+      dotenv.config({ path: file });
+      if (process.env.DATABASE_URL) break;
+    }
+  }
+}
+
 // PostgreSQL Connection Pool
 const DATABASE_URL = process.env.DATABASE_URL;
 if (!DATABASE_URL) {
@@ -25,9 +46,9 @@ if (!DATABASE_URL) {
 const pool = new pg.Pool({
   connectionString: DATABASE_URL,
   ssl: { rejectUnauthorized: false },
-  max: 10,
-  idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 10000
+  max: 3,
+  idleTimeoutMillis: 10000,
+  connectionTimeoutMillis: 15000
 });
 
 pool.on('error', (err) => {
@@ -257,10 +278,28 @@ async function initializeSchema(): Promise<void> {
   console.log('[Database] PostgreSQL schema initialized successfully.');
 }
 
-// Run schema init on module load
-initializeSchema().catch((err) => {
-  console.error('[Database] Schema initialization failed:', err.message);
-});
+// Run schema init on module load only if needed
+let schemaInitialized = false;
+async function ensureSchema(): Promise<void> {
+  if (schemaInitialized) return;
+  try {
+    const check = await pool.query("SELECT 1 FROM information_schema.tables WHERE table_name = 'users' LIMIT 1");
+    if (check.rows.length > 0) {
+      schemaInitialized = true;
+      return;
+    }
+    await initializeSchema();
+    schemaInitialized = true;
+  } catch (err: any) {
+    // Ignore harmless check errors
+  }
+}
+
+if (process.env.INIT_SCHEMA === 'true') {
+  initializeSchema().catch((err) => {
+    console.error('[Database] Schema initialization failed:', err.message);
+  });
+}
 
 // Export pool for direct access if needed
 export const db = pool;

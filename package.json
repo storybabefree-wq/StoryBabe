@@ -14,9 +14,9 @@
     "db:generate": "npm run db:generate -w @storybabe/database",
     "db:push": "npm run db:push -w @storybabe/database",
     "build": "npm run build -w @storybabe/web",
-    "build:services": "tsc -b packages/types packages/security packages/database services/auth services/story services/social services/moderation services/worker apps/gateway",
+    "build:services": "node ./node_modules/typescript/lib/tsc.js -b packages/types packages/security packages/database services/auth services/story services/social services/moderation services/worker apps/gateway",
     "build:web": "npm run build -w @storybabe/web",
-    "build:all": "tsc -b packages/types packages/security packages/database services/auth services/story services/social services/moderation services/worker apps/gateway && npm run build -w @storybabe/web"
+    "build:all": "node ./node_modules/typescript/lib/tsc.js -b packages/types packages/security packages/database services/auth services/story services/social services/moderation services/worker apps/gateway && npm run build -w @storybabe/web"
   },
   "devDependencies": {
     "concurrently": "^9.1.2",

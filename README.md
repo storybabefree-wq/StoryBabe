@@ -16,7 +16,7 @@ StoryBabe is built as a distributed microservices monorepo with an API Gateway a
 
 ## Tech Stack
 
-- **Backend**: Node.js, Express, TypeScript, SQLite (node:sqlite / @storybabe/database)
+- **Backend**: Node.js, Express, TypeScript, PostgreSQL (Supabase / @storybabe/database)
 - **Frontend**: Next.js 14 (App Router), React, Vanilla CSS, Lucide React
 - **AI Integration**: OpenRouter Image Generation API (FLUX.1 Schnell / Stable Diffusion) with Base64 inline persistence and curated fallbacks.
 - **Monorepo Tooling**: Bun / npm workspaces, TypeScript Project References

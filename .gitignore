@@ -17,10 +17,11 @@ data/
 *.sqlite
 *.sqlite3
 
-# Environment Variables
+# Environment Variables & Secrets
 .env
 .env.*
 *.env
+StoryBabe.env
 services/*/.env
 services/*/.env.*
 apps/*/.env
@@ -38,7 +39,9 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
-# IDE & OS
+# IDE, Agents & OS
+.agents/
+.gemini/
 .DS_Store
 Thumbs.db
 .vscode/
